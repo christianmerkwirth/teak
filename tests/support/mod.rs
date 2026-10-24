@@ -426,6 +426,8 @@ pub struct Report {
     pub reads: std::collections::BTreeMap<String, u64>,
     /// Elapsed time per stage, in ms.
     pub stages_ms: std::collections::BTreeMap<String, f64>,
+    /// Event counts, for example `magika` (files that Magika typed).
+    pub counts: std::collections::BTreeMap<String, u64>,
 }
 
 #[cfg(feature = "test-hooks")]
@@ -442,6 +444,11 @@ pub fn read_report(path: &Path) -> Report {
         report
             .stages_ms
             .insert(k.clone(), v.as_f64().expect("stage ms"));
+    }
+    if let Some(counts) = json["counts"].as_object() {
+        for (k, v) in counts {
+            report.counts.insert(k.clone(), v.as_u64().expect("count"));
+        }
     }
     report
 }
