@@ -69,19 +69,25 @@ fn fr45_dates_show_as_a_range() {
 }
 
 #[test]
-fn fr45_hex_hashes_and_uuids() {
+fn fr45_hex_hashes() {
     let fx = Fixture::new();
     for i in 0..20u64 {
-        let h = format!("{:040x}", (i + 1) * 0x9e37_79b9_7f4a_7c15_u64);
-        fx.file(&format!("objects/{h}"), "blob\n");
-    }
-    for i in 0..6u32 {
-        let id = format!("{:08x}-1234-4abc-8def-{:012x}", i * 7919 + 1, i + 100);
-        fx.file(&format!("meta/{id}.json"), "{}\n");
+        let h = format!("{:040x}", (i + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15_u64));
+        fx.file(&h, "blob\n");
     }
     let out = run(&fx, &[]);
     let hash = out.must_row("[hash]");
     assert!(cells(hash).contains(&"20"), "{hash}");
+}
+
+#[test]
+fn fr45_uuids() {
+    let fx = Fixture::new();
+    for i in 0..6u32 {
+        let id = format!("{:08x}-1234-4abc-8def-{:012x}", i * 7919 + 1, i + 100);
+        fx.file(&format!("{id}.json"), "{}\n");
+    }
+    let out = run(&fx, &[]);
     out.must_row("[uuid].json");
 }
 
@@ -89,7 +95,7 @@ fn fr45_hex_hashes_and_uuids() {
 fn fr45_fifteen_hex_chars_are_not_a_hash() {
     let fx = Fixture::new();
     for i in 0..6u64 {
-        let h = format!("{:015x}", (i + 1) * 0x0123_4567_89ab_cdu64);
+        let h = format!("{:015x}", (i + 1) * 0x0001_2345_6789_abcd_u64);
         fx.file(&h, "x\n");
     }
     let out = run(&fx, &[]);

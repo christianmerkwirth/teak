@@ -2,7 +2,7 @@
 //! budget holds in one place.
 
 use crate::aggregate::Aggs;
-use crate::series::Series;
+use crate::series::{Series, Uniform};
 use crate::tree::{NodeId, Tree};
 
 /// Footer counts: (group name, files), high counts first.
@@ -31,10 +31,12 @@ pub enum RowKind {
         joined: Vec<NodeId>,
         open: bool,
     },
-    /// A closed directory.
+    /// A closed directory. A uniform directory (FR-47) carries its type
+    /// and median size.
     Summary {
         node: NodeId,
         joined: Vec<NodeId>,
+        uniform: Option<Uniform>,
     },
     /// The children of `parent` that do not fit.
     Overflow {

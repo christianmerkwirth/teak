@@ -339,6 +339,9 @@ pub fn name_label(node: &Node, name: &[u8]) -> LabelId {
 /// The head size for fast detection.
 pub const HEAD_MAX: usize = 4096;
 
+/// Series up to this size get every member typed; larger ones a sample.
+pub const SERIES_ALL: usize = 64;
+
 /// Types the files of the visible rows, and marks secrets. Content comes
 /// only from `io::read_head`, never with `--detect off`, for non-regular
 /// files, or on a pseudo file system.
@@ -350,14 +353,22 @@ pub fn run(
 ) -> HashMap<crate::tree::NodeId, TypeInfo> {
     use crate::tree::flag;
     use crate::view::RowKind;
-    let ids: Vec<crate::tree::NodeId> = view
-        .rows
-        .iter()
-        .filter_map(|row| match row.kind {
-            RowKind::Entry { node, .. } if !tree.node(node).is_dir() => Some(node),
-            _ => None,
-        })
-        .collect();
+    let mut ids: Vec<crate::tree::NodeId> = Vec::new();
+    for row in &view.rows {
+        match &row.kind {
+            RowKind::Entry { node, .. } if !tree.node(*node).is_dir() => ids.push(*node),
+            // Small series: every member; large ones: first, middle, last.
+            RowKind::Series { series, .. } => {
+                let m = &series.members;
+                if m.len() <= SERIES_ALL {
+                    ids.extend_from_slice(m);
+                } else {
+                    ids.extend([m[0], m[m.len() / 2], m[m.len() - 1]]);
+                }
+            }
+            _ => {}
+        }
+    }
     let mut out = HashMap::new();
     for id in ids {
         let node = *tree.node(id);

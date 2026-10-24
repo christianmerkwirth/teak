@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BinaryHeap, HashMap};
 use crate::aggregate::Aggs;
 use crate::chaff::{Action, ChaffTag, Source};
 use crate::detect::{LabelId, label};
-use crate::series::{self, Unit};
+use crate::series::{self, Uniform, Unit};
 use crate::tree::{NodeId, ROOT, Tree, flag};
 use crate::view::{ChaffItem, ClassCounts, Row, RowKind, View};
 
@@ -85,6 +85,7 @@ pub fn plan(inp: &SelectInputs, budget: usize, opts: &SelectOpts) -> View {
             kind: RowKind::Summary {
                 node: ROOT,
                 joined: Vec::new(),
+                uniform: None,
             },
         });
     }
@@ -118,6 +119,8 @@ impl Cand {
 struct DirState {
     /// Best first; ties by name.
     cands: Vec<Cand>,
+    /// A uniform directory shows as one row, also when it would open.
+    uniform: Option<Uniform>,
     chaff: Vec<NodeId>,
     shown: usize,
     open: bool,
@@ -235,6 +238,11 @@ impl Planner<'_> {
         }
         let (rows, chaff) = self.visible(dir);
         let units = series::group(self.inp.tree, dir, &rows, self.opts.series_min);
+        let uniform = if dir == ROOT {
+            None
+        } else {
+            series::uniform(self.inp.tree, &units, self.inp.labels)
+        };
         let mut cands: Vec<Cand> = units
             .into_iter()
             .map(|unit| {
@@ -258,6 +266,7 @@ impl Planner<'_> {
             dir,
             DirState {
                 cands,
+                uniform,
                 chaff,
                 shown: 0,
                 open: false,
@@ -325,6 +334,9 @@ impl Planner<'_> {
             return;
         }
         self.ensure(tail, row_depth);
+        if self.states[&tail].uniform.is_some() {
+            return;
+        }
         let (cost, gain) = Self::open_cost(&self.states[&tail], cand.score);
         if cost == 0 {
             return;
@@ -509,6 +521,7 @@ impl Planner<'_> {
                             RowKind::Summary {
                                 node: id,
                                 joined: cand.joined.clone(),
+                                uniform: self.states.get(&tail).and_then(|s| s.uniform),
                             }
                         };
                         rows.push(Row {

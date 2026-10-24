@@ -12,7 +12,7 @@ use crate::Scan;
 use crate::aggregate::DirAgg;
 use crate::chaff::{ChaffClass, ChaffTag};
 use crate::detect::{LabelId, TypeGroup, label};
-use crate::series::Series;
+use crate::series::{Part, Series};
 use crate::tree::{Kind, NodeId, ROOT, Tree, flag};
 use crate::view::{ChaffItem, Row, RowKind};
 
@@ -275,10 +275,18 @@ impl Cx<'_> {
                 Box::new(self.node_cells(prefix, *node, joined, *open)),
                 self.dimmed(*node),
             ),
-            RowKind::Summary { node, joined } => Prepared::Table(
-                Box::new(self.node_cells(prefix, *node, joined, false)),
-                self.dimmed(*node),
-            ),
+            RowKind::Summary {
+                node,
+                joined,
+                uniform,
+            } => {
+                let mut cells = self.node_cells(prefix, *node, joined, false);
+                if let Some(u) = uniform {
+                    cells.ty = format!("{} ~{}", label(u.label).name, self.size(u.median_size));
+                    cells.ty_short = cells.ty.clone();
+                }
+                Prepared::Table(Box::new(cells), self.dimmed(*node))
+            }
             RowKind::Overflow {
                 dirs,
                 files,
@@ -490,11 +498,92 @@ impl Cx<'_> {
     }
 
     fn series_cells(&self, prefix: String, series: &Series) -> Cells {
-        let _ = series;
+        let g = self.opts.glyphs;
+        let tree = self.tree();
+        let mut name = String::new();
+        for part in &series.parts {
+            match part {
+                Part::Lit(b) => name.push_str(&escape(b)),
+                Part::Range(a, b) => {
+                    let _ = write!(name, "[{}{}{}]", escape(a), g.dash, escape(b));
+                }
+                Part::Hash => name.push_str("[hash]"),
+                Part::Uuid => name.push_str("[uuid]"),
+            }
+        }
+        let count = if series.missing > 0 {
+            format!(
+                "{} of {}",
+                thousands(series.range - series.missing),
+                thousands(series.range)
+            )
+        } else {
+            thousands(series.members.len() as u64)
+        };
+        let (mix, estimated) = self.series_mix(series);
+        let ty = format!(
+            "{mix}{} ~{}",
+            if estimated { g.approx } else { "" },
+            self.size(series.median_size)
+        );
+        let newest = series
+            .members
+            .iter()
+            .map(|&m| tree.node(m).mtime_ns)
+            .max()
+            .unwrap_or(i64::MIN);
         Cells {
             prefix,
+            name,
+            name_paint: Some(Paint::Name {
+                node: series.members[0],
+                group: self.scan.type_of(series.members[0]).group,
+                dir: false,
+            }),
+            size: self.size(series.total_size),
+            count,
+            ty_short: ty.clone(),
+            ty,
+            age: self.age(newest),
             ..Cells::default()
         }
+    }
+
+    /// The type mix of a series by count (`png 9 · jpeg 1`), from the typed
+    /// members. A sampled series shows its main type, marked as estimated.
+    fn series_mix(&self, series: &Series) -> (String, bool) {
+        let typed: Vec<LabelId> = series
+            .members
+            .iter()
+            .filter_map(|m| self.scan.types.get(m).map(|t| t.label))
+            .collect();
+        let estimated = typed.len() < series.members.len();
+        let mut counts: Vec<(LabelId, u64)> = Vec::new();
+        let labels: Vec<LabelId> = if typed.is_empty() {
+            series
+                .members
+                .iter()
+                .map(|&m| self.scan.labels[m as usize])
+                .collect()
+        } else {
+            typed
+        };
+        for l in labels {
+            match counts.iter_mut().find(|(c, _)| *c == l) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((l, 1)),
+            }
+        }
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        if estimated || counts.len() == 1 {
+            return (label(counts[0].0).name.to_string(), estimated);
+        }
+        let parts: Vec<String> = counts
+            .iter()
+            .take(3)
+            .map(|(l, n)| format!("{} {}", label(*l).name, thousands(*n)))
+            .collect();
+        (parts.join(self.opts.glyphs.sep), false)
     }
 
     fn flags(&self, id: NodeId) -> Vec<Span> {

@@ -2,7 +2,7 @@
 
 mod support;
 
-use support::{Fixture, cells, depth, is_root, run, run_pty, strip_glyphs};
+use support::{Fixture, cells, depth, is_root, run, run_pty, strip_glyphs, word};
 
 /// 500 files in 40 directories (some nested).
 fn wide_fixture() -> Fixture {
@@ -74,12 +74,12 @@ fn fr11_bad_budgets_are_usage_errors() {
 fn fr11_small_tree_uses_fewer_lines_than_the_budget() {
     let fx = Fixture::new();
     for i in 0..5 {
-        fx.file(&format!("f{i}.txt"), "x\n");
+        fx.file(&format!("{}.txt", word(i)), "x\n");
     }
     let out = run(&fx, &["-n", "100"]);
     assert_eq!(out.lines().len(), 7, "{}", out.stdout);
     for i in 0..5 {
-        out.must_row(&format!("f{i}.txt"));
+        out.must_row(&format!("{}.txt", word(i)));
     }
 }
 
@@ -90,7 +90,7 @@ fn fr13_salience_opens_the_deep_recent_bulk() {
     let fx = Fixture::new();
     fx.sized("a/old.txt", 1000);
     for i in 0..50 {
-        fx.sized(&format!("z/deep/deeper/f{i:02}.dat"), 200);
+        fx.sized(&format!("z/deep/deeper/f{}.dat", word(i)), 200);
     }
     fx.mtime_all(1800);
     fx.mtime("a/old.txt", 3 * 365 * 86_400);
@@ -113,7 +113,7 @@ fn fr13_ties_break_by_name_and_runs_agree() {
     let fx = Fixture::new();
     for d in 0..10 {
         for f in 0..5 {
-            fx.sized(&format!("s{d}/f{f}.txt"), 500);
+            fx.sized(&format!("s{d}/{}.txt", word(f)), 500);
         }
     }
     fx.mtime_all(3600);
@@ -138,7 +138,7 @@ fn fr13_ties_break_by_name_and_runs_agree() {
 fn fr14_overflow_row_counts_the_rest() {
     let fx = Fixture::new();
     for i in 0..50 {
-        fx.sized(&format!("logs/l{i:02}.txt"), 1024);
+        fx.sized(&format!("logs/l{}.txt", word(i)), 1024);
     }
     // Header, logs/, 8 files, overflow, footer.
     let out = run(&fx, &["-n", "12"]);
@@ -160,7 +160,7 @@ fn fr14_overflow_row_names_dirs_and_files() {
         fx.sized(&format!("big/sub{d}/old.bin"), 10);
     }
     for i in 0..45 {
-        fx.sized(&format!("big/f{i:02}.txt"), 5000);
+        fx.sized(&format!("big/f{}.txt", word(i)), 5000);
     }
     fx.mtime_all(60);
     for d in 0..3 {

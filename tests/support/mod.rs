@@ -128,6 +128,18 @@ impl Fixture {
     }
 }
 
+/// A name with no digits (`aa`, `ab`, …), so a run of them never forms a
+/// series (FR-44).
+pub fn word(i: usize) -> String {
+    let a = (b'a' + (i / 26 % 26) as u8) as char;
+    let b = (b'a' + (i % 26) as u8) as char;
+    if i < 676 {
+        format!("{a}{b}")
+    } else {
+        format!("{}{a}{b}", (b'a' + (i / 676 % 26) as u8) as char)
+    }
+}
+
 /// The flags of the shared test conditions. Later flags override them.
 pub const DEFAULT_FLAGS: &[&str] = &["--format", "plain", "--width", "120", "--color", "never"];
 
