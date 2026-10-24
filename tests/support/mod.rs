@@ -403,3 +403,39 @@ pub fn read_report(path: &Path) -> Report {
     }
     report
 }
+
+/// Parses `args` (without the program name) into teak options.
+pub fn opts(args: &[&str]) -> teak::cli::Opts {
+    let argv = std::iter::once("teak").chain(args.iter().copied());
+    match teak::cli::parse_from(argv).expect("valid flags") {
+        teak::cli::Parsed::Run(opts) => opts,
+        teak::cli::Parsed::Version => panic!("--version is not a scan"),
+    }
+}
+
+/// Builds the view of `dir` through the library, as `teak args` would.
+pub fn scan(dir: &Path, args: &[&str]) -> teak::Scan {
+    let opts = opts(args);
+    let budget = match opts.budget {
+        teak::cli::Budget::Lines(n) => n,
+        teak::cli::Budget::Auto => 100,
+    };
+    teak::build(dir, &opts, budget, SCAN_TIME as i64).expect("scan")
+}
+
+/// The node at `rel` (a `/`-joined path below the root).
+pub fn node(scan: &teak::Scan, rel: &str) -> teak::tree::NodeId {
+    scan.tree
+        .find(rel)
+        .unwrap_or_else(|| panic!("no node {rel}"))
+}
+
+/// The nodes in the chaff row of the directory `dir`, if it has one.
+pub fn chaff_items(scan: &teak::Scan, dir: teak::tree::NodeId) -> Option<Vec<teak::tree::NodeId>> {
+    scan.view.rows.iter().find_map(|r| match &r.kind {
+        teak::view::RowKind::Chaff { parent, items, .. } if *parent == dir => {
+            Some(items.iter().map(|i| i.node).collect())
+        }
+        _ => None,
+    })
+}

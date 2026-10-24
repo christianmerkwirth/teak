@@ -201,6 +201,17 @@ impl Tree {
         id != ROOT && self.name(id).first() == Some(&b'.')
     }
 
+    /// The node at a `/`-joined path below the root.
+    pub fn find(&self, rel: &str) -> Option<NodeId> {
+        let mut cur = ROOT;
+        for part in rel.split('/').filter(|p| !p.is_empty()) {
+            cur = self
+                .children(cur)
+                .find(|&c| self.name(c) == part.as_bytes())?;
+        }
+        Some(cur)
+    }
+
     /// The number of non-directory nodes in the subtree of `id` (with `id`).
     pub fn file_count(&self, id: NodeId) -> u64 {
         (id..self.nodes[id as usize].end)
