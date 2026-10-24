@@ -146,10 +146,26 @@ pub fn word(i: usize) -> String {
 /// The flags of the shared test conditions. Later flags override them.
 pub const DEFAULT_FLAGS: &[&str] = &["--format", "plain", "--width", "120", "--color", "never"];
 
+/// A new cache directory for one teak run, below the target dir: tests never
+/// share a type cache, and never touch the user's own.
+pub fn fresh_cache_dir() -> PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("teak-cache")
+        .join(format!(
+            "{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ))
+}
+
 /// A teak command with a fixed scan time and a clean environment, in `dir`.
+/// Each command gets its own empty cache directory.
 pub fn command(dir: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_teak"));
     cmd.current_dir(dir)
+        .env("XDG_CACHE_HOME", fresh_cache_dir())
         .env("SOURCE_DATE_EPOCH", SCAN_TIME.to_string())
         .env_remove("TEAK_TEST_REPORT")
         .env_remove("TEAK_TEST_READ_DELAY_MS")
@@ -234,6 +250,19 @@ pub fn run_in(dir: &Path, args: &[&str]) -> Run {
         command(dir)
             .args(DEFAULT_FLAGS)
             .args(args)
+            .output()
+            .expect("run teak"),
+    )
+}
+
+/// Runs teak in `dir` with the shared test flags, then `args`, with
+/// `XDG_CACHE_HOME` set to `cache`.
+pub fn run_cached(dir: &Path, cache: &Path, args: &[&str]) -> Run {
+    Run::from_output(
+        command(dir)
+            .args(DEFAULT_FLAGS)
+            .args(args)
+            .env("XDG_CACHE_HOME", cache)
             .output()
             .expect("run teak"),
     )

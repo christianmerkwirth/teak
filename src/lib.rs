@@ -4,6 +4,7 @@
 //! salience → selection → detection on the visible rows → layout → render.
 
 pub mod aggregate;
+pub mod cache;
 pub mod chaff;
 pub mod cli;
 pub mod detect;
