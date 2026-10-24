@@ -84,6 +84,59 @@ fn fr30_every_class_has_its_entry_and_action() {
     assert!(footer.contains("editor 1"), "{footer}");
 }
 
+#[test]
+fn fr30_classes_through_json() {
+    let fx = class_fixture();
+    let out = run(&fx, &["--format", "json"]);
+    assert_eq!(out.code, Some(0), "{out:?}");
+    let doc: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    let rows = doc["rows"].as_array().unwrap();
+    let chaff = rows
+        .iter()
+        .find(|r| r["kind"] == "chaff" && r["depth"] == 1)
+        .expect("a root chaff row");
+    let items: Vec<(&str, &str)> = chaff["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| (i["path"].as_str().unwrap(), i["class"].as_str().unwrap()))
+        .collect();
+    for want in [
+        ("node_modules/", "vendor"),
+        ("target/", "build"),
+        ("__pycache__/", "cache"),
+        ("Cargo.lock", "lock"),
+        ("api.pb.go", "generated"),
+        ("app.min.js", "minified"),
+        (".editorconfig", "boilerplate"),
+        ("LICENSE", "boilerplate"),
+        (".gitkeep", "empty"),
+    ] {
+        assert!(items.contains(&want), "{want:?} in {items:?}");
+    }
+    // vcs and editor are hidden: no row, a footer count.
+    assert!(rows.iter().all(|r| r["path"] != ".git/"), "{rows:?}");
+    let hidden: Vec<(&str, u64)> = doc["footer"]["hidden"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| (h["class"].as_str().unwrap(), h["files"].as_u64().unwrap()))
+        .collect();
+    assert!(hidden.contains(&("vcs", 1)), "{hidden:?}");
+    assert!(hidden.contains(&("editor", 1)), "{hidden:?}");
+    assert_eq!(
+        row_of(rows, "src/main.rs")["class"],
+        serde_json::Value::Null
+    );
+}
+
+/// The JSON row whose path is `path`.
+fn row_of<'a>(rows: &'a [serde_json::Value], path: &str) -> &'a serde_json::Value {
+    rows.iter()
+        .find(|r| r["path"] == path)
+        .unwrap_or_else(|| panic!("no row {path} in {rows:#?}"))
+}
+
 // FR-31: Rule order
 
 #[test]

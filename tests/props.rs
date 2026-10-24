@@ -1,8 +1,7 @@
 //! Property tests: the hard budget limit (FR-12) and every entry counted
 //! (FR-21), on random trees with random flags (P1, plus `-l` and
-//! `--focus`); and the same output for any thread count.
-//!
-//! Task-5 adds `md` and `json`.
+//! `--focus`), in the text formats, `md`, and `json`; and the same output
+//! for any thread count.
 
 mod support;
 
@@ -132,6 +131,15 @@ fn count_files(root: &Path) -> u64 {
     n
 }
 
+/// The number of lines inside the first fenced code block.
+fn fenced_lines(md: &str) -> usize {
+    let mut lines = md.lines().skip_while(|l| !l.starts_with("```"));
+    let fence = lines.next().expect("an opening fence");
+    let len = fence.len() - fence.trim_start_matches('`').len();
+    let close = "`".repeat(len);
+    lines.position(|l| l == close).expect("a closing fence")
+}
+
 fn flag_sets() -> impl Strategy<Value = Vec<&'static str>> {
     let hidden = prop_oneof![Just(vec![]), Just(vec!["-A"]), Just(vec!["-a"])];
     let sort = prop_oneof![
@@ -229,9 +237,40 @@ proptest! {
             }
         }
 
+        // FR-12 in `md`: the lines inside the fenced block.
+        let env = teak::Env::fixed(SCAN_TIME as i64);
+        let lopts = teak::layout_opts(&o, &teak::settings(&o, &env));
+        let mut out = Vec::new();
+        teak::render::md::write(&s, &lopts, &mut out).unwrap();
+        let md = String::from_utf8(out).unwrap();
+        let block = fenced_lines(&md);
+        prop_assert!(block <= budget, "{block} block lines for {budget}:\n{md}");
+
+        // FR-12 in `json`: the row objects.
+        let mut out = Vec::new();
+        teak::render::json::write(&s, &lopts, false, &mut out).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let rows = doc["rows"].as_array().unwrap();
+        prop_assert!(rows.len() <= budget, "{} rows for {budget}", rows.len());
+
         // FR-21: visible + summed + hidden = an independent walk.
+        let files = count_files(fx.path());
         let shown: u64 = s.view.rows.iter().map(|r| r.files(&s.tree, &s.aggs)).sum();
-        prop_assert_eq!(shown + s.view.hidden_files(), count_files(fx.path()));
+        prop_assert_eq!(shown + s.view.hidden_files(), files);
+        // FR-21 through JSON: an open directory stands for no files; the
+        // rows below it do.
+        let shown: u64 = rows
+            .iter()
+            .filter(|r| !r["flags"].as_array().unwrap().contains(&"open".into()))
+            .map(|r| r["files"].as_u64().unwrap())
+            .sum();
+        let hidden: u64 = doc["footer"]["hidden"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["files"].as_u64().unwrap())
+            .sum();
+        prop_assert_eq!(shown + hidden, files);
     }
 }
 

@@ -370,3 +370,45 @@ fn fr77_a_private_key_by_content_is_a_secret() {
     );
     assert!(!out.stdout.contains("BEGIN"), "{}", out.stdout);
 }
+
+#[test]
+fn fr77_no_secret_bytes_in_md_and_json() {
+    let fx = secrets_fixture();
+    for args in [
+        &["--format", "md"][..],
+        &["--format", "json"],
+        &["--json-full"],
+    ] {
+        let mut all = vec!["-a", "--preview", "full"];
+        all.extend(args);
+        let out = run(&fx, &all);
+        assert_eq!(out.code, Some(0), "{out:?}");
+        assert!(!out.stdout.contains("sk-test-123"), "{}", out.stdout);
+        assert!(!out.stdout.contains("BEGIN"), "{}", out.stdout);
+        assert!(!out.stdout.contains("password"), "{}", out.stdout);
+        if args[0] == "--format" && args[1] == "md" {
+            for name in [".env", "id_rsa", "server.pem", "credentials.json", ".netrc"] {
+                let line = out
+                    .lines()
+                    .into_iter()
+                    .find(|l| support::strip_glyphs(l).starts_with(name))
+                    .unwrap_or_else(|| panic!("no {name} in {}", out.stdout));
+                assert!(line.contains("no preview (secret)"), "{line}");
+            }
+            assert!(out.stdout.contains("fn main() {}"), "{}", out.stdout);
+            continue;
+        }
+        let doc: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+        let rows = doc["rows"].as_array().unwrap();
+        for name in [".env", "id_rsa", "server.pem", "credentials.json", ".netrc"] {
+            let row = rows
+                .iter()
+                .find(|r| r["path"] == name)
+                .unwrap_or_else(|| panic!("no {name} in {doc:#}"));
+            assert_eq!(row["preview"], "no preview (secret)", "{row}");
+            assert!(row["flags"].as_array().unwrap().contains(&"secret".into()));
+        }
+        let main = rows.iter().find(|r| r["path"] == "main.rs").unwrap();
+        assert_eq!(main["preview"], "fn main() {}");
+    }
+}
