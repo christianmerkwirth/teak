@@ -336,6 +336,11 @@ pub fn name_label(node: &Node, name: &[u8]) -> LabelId {
         .unwrap_or_else(|| label_id("unknown"))
 }
 
+/// The label the extension says when it does not match the content label.
+pub fn mismatch(_content: LabelId, _score: f32, _name: &[u8]) -> Option<LabelId> {
+    None
+}
+
 /// The head size for fast detection.
 pub const HEAD_MAX: usize = 4096;
 

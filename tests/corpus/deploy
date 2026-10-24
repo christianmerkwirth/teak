@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+for f in "$@"; do
+    if [ -f "$f" ]; then
+        echo "file: $f"
+    else
+        echo "missing: $f" >&2
+    fi
+done

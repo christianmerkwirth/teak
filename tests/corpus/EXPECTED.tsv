@@ -1,0 +1,21 @@
+# file	label	mismatch (the extension's label, or -)
+backup.zip	gzip	zip
+ci.yml	yaml	-
+config.js	javascript	-
+deploy	shell	-
+icon.dat	png	-
+index.html	html	-
+list.c	c	-
+list.c.txt	c	-
+logo.png	png	-
+NOTES	markdown	-
+package.json	json	-
+paper	pdf	-
+paper.pdf	pdf	-
+photo.jpg	jpeg	-
+pipeline	yaml	-
+README.md	markdown	-
+report.pdf	html	pdf
+script	python	-
+settings.yaml	json	-
+tool	python	-

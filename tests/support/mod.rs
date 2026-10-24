@@ -150,6 +150,7 @@ pub fn command(dir: &Path) -> Command {
         .env("SOURCE_DATE_EPOCH", SCAN_TIME.to_string())
         .env_remove("TEAK_TEST_REPORT")
         .env_remove("TEAK_TEST_READ_DELAY_MS")
+        .env_remove("TEAK_TEST_NO_CONTENT_CHECKS")
         .env_remove("NO_COLOR")
         .env_remove("CLICOLOR_FORCE")
         .env_remove("LS_COLORS")
@@ -368,6 +369,17 @@ pub fn run_with_timeout(dir: &Path, args: &[&str], limit: Duration) -> Option<Ru
     }
 }
 
+/// The detection corpus: small files with wrong and missing extensions.
+/// `tests/corpus/EXPECTED.tsv` lists the label that each file must get.
+pub fn corpus_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus")
+}
+
+/// The bytes of a corpus file.
+pub fn corpus(name: &str) -> Vec<u8> {
+    fs::read(corpus_dir().join(name)).unwrap_or_else(|e| panic!("corpus file {name}: {e}"))
+}
+
 /// True when the tests run as root (mode-000 checks do not work then).
 pub fn is_root() -> bool {
     // SAFETY: getuid has no preconditions.
@@ -377,12 +389,19 @@ pub fn is_root() -> bool {
 /// Runs teak with `TEAK_TEST_REPORT` set and returns the run and the report.
 #[cfg(feature = "test-hooks")]
 pub fn run_report(dir: &Path, args: &[&str]) -> (Run, Report) {
+    run_report_env(dir, args, &[])
+}
+
+/// Like [`run_report`], with more environment variables.
+#[cfg(feature = "test-hooks")]
+pub fn run_report_env(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> (Run, Report) {
     let report_dir = tempfile::tempdir().expect("report dir");
     let report = report_dir.path().join("report.json");
     let out = command(dir)
         .args(DEFAULT_FLAGS)
         .args(args)
         .env("TEAK_TEST_REPORT", &report)
+        .envs(env.iter().copied())
         .output()
         .expect("run teak");
     (Run::from_output(out), read_report(&report))

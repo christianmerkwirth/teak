@@ -46,14 +46,6 @@ fn fr48_magic_bytes_win_over_the_extension() {
 }
 
 #[test]
-fn fr48_full_acts_as_fast_until_task_3() {
-    let fx = types_fixture();
-    let out = run(&fx, &["--detect", "full"]);
-    assert_eq!(type_cell(&out, "y.png"), "jpeg", "{}", out.stdout);
-    assert_eq!(type_cell(&out, "noext"), "pdf", "{}", out.stdout);
-}
-
-#[test]
 fn fr48_type_of_order() {
     let t = fast::type_of(b"Makefile", Some(b"all:\n"));
     assert_eq!((t.name(), t.source), ("makefile", Source::Name));
