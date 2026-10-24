@@ -1,36 +1,146 @@
+//! The one gate for all file-content reads.
+//!
+//! Every byte that teak reads from a file goes through this module, so the
+//! `test-hooks` feature can count reads per path and add a delay to each read.
+
+use std::fs::File;
+use std::io::{self, Read};
 use std::path::Path;
 
-pub fn read_head(_path: &Path, _max: usize) -> std::io::Result<Vec<u8>> {
-    unimplemented!()
+/// Reads at most `max` bytes from the start of `path`.
+///
+/// The caller makes sure that `path` is a regular file and not on a pseudo
+/// file system; this function does not stat it again.
+pub fn read_head(path: &Path, max: usize) -> io::Result<Vec<u8>> {
+    let file = File::open(path)?;
+    let mut buf = Vec::new();
+    file.take(max as u64).read_to_end(&mut buf)?;
+    #[cfg(feature = "test-hooks")]
+    {
+        hooks::count_read(path, buf.len() as u64);
+        hooks::delay();
+    }
+    Ok(buf)
+}
+
+/// A file that Magika reads through its `SyncInput` trait.
+///
+/// Magika picks the offsets (the first and the last block of the file); each
+/// `read_at` goes through this gate, so the hooks see the bytes. The read delay
+/// applies once per file, when it opens.
+#[cfg(feature = "magika")]
+pub struct MagikaInput {
+    file: File,
+    len: u64,
+    #[cfg(feature = "test-hooks")]
+    path: std::path::PathBuf,
 }
 
 #[cfg(feature = "magika")]
-pub struct MagikaInput;
-
-#[cfg(feature = "magika")]
 impl MagikaInput {
-    pub fn open(_path: &Path) -> std::io::Result<MagikaInput> {
-        unimplemented!()
+    pub fn open(path: &Path) -> io::Result<MagikaInput> {
+        let file = File::open(path)?;
+        let len = file.metadata()?.len();
+        #[cfg(feature = "test-hooks")]
+        hooks::delay();
+        Ok(MagikaInput {
+            file,
+            len,
+            #[cfg(feature = "test-hooks")]
+            path: path.to_path_buf(),
+        })
     }
 }
 
 #[cfg(feature = "magika")]
 impl magika::SyncInput for MagikaInput {
     fn length(&self) -> magika::Result<u64> {
-        unimplemented!()
+        Ok(self.len)
     }
-    fn read_at(&mut self, _buffer: &mut [u8], _offset: u64) -> magika::Result<()> {
-        unimplemented!()
+
+    fn read_at(&mut self, buffer: &mut [u8], offset: u64) -> magika::Result<()> {
+        use std::os::unix::fs::FileExt;
+        self.file.read_exact_at(buffer, offset)?;
+        #[cfg(feature = "test-hooks")]
+        hooks::count_read(&self.path, buffer.len() as u64);
+        Ok(())
     }
 }
 
+/// Test signals. Only in builds with the `test-hooks` feature.
+///
+/// - `TEAK_TEST_READ_DELAY_MS`: sleep this long on each content read.
+/// - `TEAK_TEST_REPORT`: [`write_report`] writes the read counters and stage
+///   times to this file as JSON.
 #[cfg(feature = "test-hooks")]
 pub mod hooks {
-    pub struct StageTimer;
-    pub fn stage(_name: &'static str) -> StageTimer {
-        unimplemented!()
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    static READS: Mutex<BTreeMap<PathBuf, u64>> = Mutex::new(BTreeMap::new());
+    static STAGES: Mutex<BTreeMap<&'static str, f64>> = Mutex::new(BTreeMap::new());
+
+    pub(crate) fn count_read(path: &Path, bytes: u64) {
+        let mut reads = READS.lock().unwrap_or_else(|e| e.into_inner());
+        *reads.entry(path.to_path_buf()).or_default() += bytes;
     }
+
+    /// Reads the env var on each call, so tests can change it at run time.
+    pub(crate) fn delay() {
+        let ms = std::env::var("TEAK_TEST_READ_DELAY_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok());
+        if let Some(ms) = ms.filter(|&ms| ms > 0) {
+            std::thread::sleep(Duration::from_millis(ms));
+        }
+    }
+
+    /// Adds its elapsed time to `stages_ms[name]` when it drops.
+    pub struct StageTimer {
+        name: &'static str,
+        start: Instant,
+    }
+
+    impl Drop for StageTimer {
+        fn drop(&mut self) {
+            let ms = self.start.elapsed().as_secs_f64() * 1000.0;
+            let mut stages = STAGES.lock().unwrap_or_else(|e| e.into_inner());
+            *stages.entry(self.name).or_default() += ms;
+        }
+    }
+
+    pub fn stage(name: &'static str) -> StageTimer {
+        StageTimer {
+            name,
+            start: Instant::now(),
+        }
+    }
+
+    /// Writes `{"reads": {...}, "stages_ms": {...}}` to `TEAK_TEST_REPORT`, if set.
     pub fn write_report() {
-        unimplemented!()
+        let Some(path) = std::env::var_os("TEAK_TEST_REPORT") else {
+            return;
+        };
+        let reads: serde_json::Map<_, _> = READS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(p, n)| (p.to_string_lossy().into_owned(), (*n).into()))
+            .collect();
+        let stages: serde_json::Map<_, _> = STAGES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(s, ms)| (s.to_string(), (*ms).into()))
+            .collect();
+        let report = serde_json::json!({ "reads": reads, "stages_ms": stages });
+        if let Err(e) = std::fs::write(&path, report.to_string()) {
+            eprintln!(
+                "teak: cannot write test report {}: {e}",
+                Path::new(&path).display()
+            );
+        }
     }
 }

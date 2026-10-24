@@ -16,7 +16,11 @@ fn version_prints_one_line_with_magika_state() {
     assert_eq!(out.status.code(), Some(0));
     let stdout = String::from_utf8(out.stdout).unwrap();
     let want = if cfg!(feature = "magika") {
-        format!("teak {} (magika: on, model {})\n", env!("CARGO_PKG_VERSION"), model_name())
+        format!(
+            "teak {} (magika: on, model {})\n",
+            env!("CARGO_PKG_VERSION"),
+            model_name()
+        )
     } else {
         format!("teak {} (magika: off)\n", env!("CARGO_PKG_VERSION"))
     };
@@ -38,7 +42,10 @@ fn other_calls_are_not_implemented_yet() {
     let fx = Fixture::new();
     let out = teak(&fx, &["."]);
     assert_eq!(out.status.code(), Some(2));
-    assert_eq!(String::from_utf8(out.stderr).unwrap(), "teak: not implemented yet\n");
+    assert_eq!(
+        String::from_utf8(out.stderr).unwrap(),
+        "teak: not implemented yet\n"
+    );
     assert!(out.stdout.is_empty());
 }
 
@@ -127,7 +134,11 @@ mod hooks {
             for name in ["a.txt", "b.txt", "c.txt"] {
                 let start = Instant::now();
                 teak::io::read_head(&fx.path().join(name), 16).unwrap();
-                assert!(start.elapsed() >= Duration::from_millis(10), "{name} took {:?}", start.elapsed());
+                assert!(
+                    start.elapsed() >= Duration::from_millis(10),
+                    "{name} took {:?}",
+                    start.elapsed()
+                );
             }
         });
     }
@@ -144,7 +155,11 @@ mod hooks {
             teak::io::hooks::write_report();
             read_report(&report)
         });
-        assert!(parsed.stages_ms["phase0-test"] >= 5.0, "{:?}", parsed.stages_ms);
+        assert!(
+            parsed.stages_ms["phase0-test"] >= 5.0,
+            "{:?}",
+            parsed.stages_ms
+        );
     }
 
     #[cfg(feature = "magika")]
@@ -156,7 +171,10 @@ mod hooks {
         let report = fx.path().join("report.json");
         let parsed = with_env(&[("TEAK_TEST_REPORT", report.to_str().unwrap())], || {
             let input = teak::io::MagikaInput::open(&file).unwrap();
-            magika::Session::new().unwrap().identify_content_sync(input).unwrap();
+            magika::Session::new()
+                .unwrap()
+                .identify_content_sync(input)
+                .unwrap();
             teak::io::hooks::write_report();
             read_report(&report)
         });
@@ -172,8 +190,17 @@ fn tree_hash(root: &Path) -> u64 {
             let entry = entry.unwrap();
             let path = entry.path();
             let meta = fs::symlink_metadata(&path).unwrap();
-            let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
-            let mtime = meta.modified().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+            let rel = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let mtime = meta
+                .modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
             if meta.is_dir() {
                 out.insert(rel + "/", (0, mtime, Vec::new()));
                 walk(&path, root, out);
@@ -202,7 +229,13 @@ fn tree_hash(root: &Path) -> u64 {
 }
 
 fn generate(files: u64, seed: u64, out: &Path) {
-    gen_tree::generate(&gen_tree::Opts { files, seed, out: out.to_path_buf(), ..gen_tree::Opts::default() }).unwrap();
+    gen_tree::generate(&gen_tree::Opts {
+        files,
+        seed,
+        out: out.to_path_buf(),
+        ..gen_tree::Opts::default()
+    })
+    .unwrap();
 }
 
 #[test]
@@ -238,13 +271,18 @@ fn gen_tree_makes_the_requested_mix() {
             }
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
             series += u64::from(name.starts_with("part-"));
-            let ext = path.extension().map_or(String::new(), |e| e.to_string_lossy().into_owned());
+            let ext = path
+                .extension()
+                .map_or(String::new(), |e| e.to_string_lossy().into_owned());
             *exts.entry(ext).or_default() += 1;
         }
     }
     assert_eq!(exts.values().sum::<u64>(), 2000);
     for want in ["", "rs", "py", "png", "jpg", "md", "csv"] {
-        assert!(exts.get(want).copied().unwrap_or(0) > 0, "no .{want} files in {exts:?}");
+        assert!(
+            exts.get(want).copied().unwrap_or(0) > 0,
+            "no .{want} files in {exts:?}"
+        );
     }
     assert!(series > 0, "no data series");
 }

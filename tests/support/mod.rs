@@ -25,7 +25,9 @@ pub struct Fixture {
 
 impl Fixture {
     pub fn new() -> Fixture {
-        Fixture { dir: tempfile::tempdir().expect("create temp dir") }
+        Fixture {
+            dir: tempfile::tempdir().expect("create temp dir"),
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -69,7 +71,9 @@ impl Fixture {
     /// directories; it follows symlinks.
     pub fn mtime(&self, path: &str, secs_before_scan: u64) -> &Self {
         let t = UNIX_EPOCH + Duration::from_secs(SCAN_TIME - secs_before_scan);
-        fs::File::open(self.at(path)).and_then(|f| f.set_modified(t)).expect("set mtime");
+        fs::File::open(self.at(path))
+            .and_then(|f| f.set_modified(t))
+            .expect("set mtime");
         self
     }
 }
@@ -104,10 +108,14 @@ pub fn read_report(path: &Path) -> Report {
     let json: serde_json::Value = serde_json::from_str(&text).expect("parse test report");
     let mut report = Report::default();
     for (k, v) in json["reads"].as_object().expect("reads object") {
-        report.reads.insert(k.clone(), v.as_u64().expect("read count"));
+        report
+            .reads
+            .insert(k.clone(), v.as_u64().expect("read count"));
     }
     for (k, v) in json["stages_ms"].as_object().expect("stages_ms object") {
-        report.stages_ms.insert(k.clone(), v.as_f64().expect("stage ms"));
+        report
+            .stages_ms
+            .insert(k.clone(), v.as_f64().expect("stage ms"));
     }
     report
 }
