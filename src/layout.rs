@@ -107,6 +107,8 @@ pub struct LayoutOpts {
     pub units: SizeUnits,
     pub time: TimeMode,
     pub preview: PreviewMode,
+    /// `-l`: mode, owner, and group after the name, and the oldest age.
+    pub long: bool,
 }
 
 /// What a span means, for the colors.
@@ -166,6 +168,8 @@ struct Cells {
     ty_warn: bool,
     age: String,
     perms: String,
+    owner: String,
+    group: String,
     flags: Vec<Span>,
     git: String,
     preview: String,
@@ -243,6 +247,8 @@ struct ColumnPlan {
     ty: Option<(usize, bool)>,
     age: Option<usize>,
     perms: Option<usize>,
+    owner: Option<usize>,
+    group: Option<usize>,
     flags: Option<usize>,
     git: Option<usize>,
     preview: Option<usize>,
@@ -523,11 +529,19 @@ impl Cx<'_> {
                 group,
                 dir: n.is_dir(),
             }),
-            perms: perms(n.kind, n.mode),
+            perms: if self.opts.long {
+                mode_string(n.kind, n.mode)
+            } else {
+                perms(n.kind, n.mode)
+            },
             flags: self.flags(tail),
             git: self.git_cell(tail),
             ..Cells::default()
         };
+        if self.opts.long {
+            cells.owner = user_name(n.uid);
+            cells.group = group_name(n.gid);
+        }
         if n.is_dir() {
             let agg = self.agg(tail);
             cells.size = self.size(agg.size);
@@ -555,6 +569,12 @@ impl Cx<'_> {
             } else {
                 agg.newest
             });
+            if self.opts.long && agg.oldest != i64::MAX {
+                let oldest = self.age(agg.oldest);
+                if oldest != cells.age {
+                    cells.age = format!("{}{}{oldest}", cells.age, self.opts.glyphs.dash);
+                }
+            }
         } else {
             cells.size = self.size(n.size);
             let mut ty = info.name().to_string();
@@ -894,6 +914,9 @@ impl Cx<'_> {
             if let Some(l) = self.scan.template_label(item.node) {
                 let _ = write!(text, " ({l})");
             }
+            if let Some(&orig) = self.scan.dupes.get(&item.node) {
+                let _ = write!(text, " = {}", escape(&tree.rel_path(orig)));
+            }
             let mut parts = vec![Span {
                 text: text.clone(),
                 paint: Paint::Plain,
@@ -951,6 +974,8 @@ impl Cx<'_> {
         let ty_short = max(&|c| c.ty_short.width());
         let age = max(&|c| c.age.width());
         let perms = max(&|c| c.perms.width());
+        let owner = max(&|c| c.owner.width());
+        let group = max(&|c| c.group.width());
         let flags = max(&|c| c.flags.iter().map(|s| s.text.width()).sum());
         let git = max(&|c| c.git.width());
         let preview = max(&|c| c.preview.width());
@@ -962,6 +987,8 @@ impl Cx<'_> {
             ty: some(ty).map(|w| (w, true)),
             age: some(age),
             perms: some(perms),
+            owner: some(owner),
+            group: some(group),
             flags: some(flags),
             git: some(git),
             // The preview is the last cell, and the line cut ends a long
@@ -976,6 +1003,8 @@ impl Cx<'_> {
                     p.ty.map(|t| t.0),
                     p.age,
                     p.perms,
+                    p.owner,
+                    p.group,
                     p.flags,
                     p.git,
                     p.preview,
@@ -987,7 +1016,11 @@ impl Cx<'_> {
         };
         let min_name = name_nat.min(MIN_NAME);
         type Drop = fn(&mut ColumnPlan, usize);
-        let steps: [Drop; 8] = [
+        let steps: [Drop; 9] = [
+            |p, _| {
+                p.owner = None;
+                p.group = None;
+            },
             |p, _| p.preview = None,
             |p, _| p.git = None,
             |p, _| p.age = None,
@@ -1020,6 +1053,7 @@ impl Cx<'_> {
         });
         let pad = plan.name.saturating_sub(c.prefix.width() + name_w);
         let mut tail = " ".repeat(pad);
+        let long = self.opts.long;
         let cell = |spans: &mut Vec<Span>,
                     tail: &mut String,
                     text: &str,
@@ -1045,6 +1079,18 @@ impl Cx<'_> {
         } else {
             Paint::Plain
         };
+        // `-l`: the `ls -l` order, mode, owner, group, then size.
+        if long {
+            if let Some(w) = plan.perms {
+                cell(&mut spans, &mut tail, &c.perms, w, false, Paint::Plain);
+            }
+            if let Some(w) = plan.owner {
+                cell(&mut spans, &mut tail, &c.owner, w, false, Paint::Plain);
+            }
+            if let Some(w) = plan.group {
+                cell(&mut spans, &mut tail, &c.group, w, false, Paint::Plain);
+            }
+        }
         cell(&mut spans, &mut tail, &c.size, plan.size, true, size_paint);
         if let Some(w) = plan.count {
             cell(&mut spans, &mut tail, &c.count, w, true, Paint::Plain);
@@ -1057,7 +1103,7 @@ impl Cx<'_> {
         if let Some(w) = plan.age {
             cell(&mut spans, &mut tail, &c.age, w, true, Paint::Plain);
         }
-        if let Some(w) = plan.perms {
+        if let Some(w) = plan.perms.filter(|_| !long) {
             cell(&mut spans, &mut tail, &c.perms, w, false, Paint::Plain);
         }
         if let Some(w) = plan.flags {
@@ -1437,6 +1483,70 @@ pub fn iso_time(secs: i64) -> String {
         rem / 3600,
         rem % 3600 / 60
     )
+}
+
+/// The `ls -l` mode: `-rw-r--r--`, `drwxr-xr-x`, `lrwxrwxrwx`.
+pub fn mode_string(kind: Kind, mode: u32) -> String {
+    let mut s = String::with_capacity(10);
+    s.push(match kind {
+        Kind::Dir => 'd',
+        Kind::File => '-',
+        Kind::Symlink => 'l',
+        Kind::Fifo => 'p',
+        Kind::Socket => 's',
+        Kind::Device if mode & 0o170000 == 0o060000 => 'b',
+        Kind::Device => 'c',
+    });
+    for (shift, special, mark) in [(6, 0o4000, 's'), (3, 0o2000, 's'), (0, 0o1000, 't')] {
+        let bits = (mode >> shift) & 7;
+        s.push(if bits & 4 != 0 { 'r' } else { '-' });
+        s.push(if bits & 2 != 0 { 'w' } else { '-' });
+        let x = bits & 1 != 0;
+        s.push(match (mode & special != 0, x) {
+            (true, true) => mark,
+            (true, false) => mark.to_ascii_uppercase(),
+            (false, true) => 'x',
+            (false, false) => '-',
+        });
+    }
+    s
+}
+
+thread_local! {
+    static USERS: std::cell::RefCell<std::collections::HashMap<u32, String>> =
+        Default::default();
+    static GROUPS: std::cell::RefCell<std::collections::HashMap<u32, String>> =
+        Default::default();
+}
+
+/// The user name of `uid` (from the system user database), or the number.
+pub fn user_name(uid: u32) -> String {
+    USERS.with(|m| {
+        m.borrow_mut()
+            .entry(uid)
+            .or_insert_with(|| {
+                uzers::get_user_by_uid(uid).map_or_else(
+                    || uid.to_string(),
+                    |u| u.name().to_string_lossy().into_owned(),
+                )
+            })
+            .clone()
+    })
+}
+
+/// The group name of `gid`, or the number.
+pub fn group_name(gid: u32) -> String {
+    GROUPS.with(|m| {
+        m.borrow_mut()
+            .entry(gid)
+            .or_insert_with(|| {
+                uzers::get_group_by_gid(gid).map_or_else(
+                    || gid.to_string(),
+                    |g| g.name().to_string_lossy().into_owned(),
+                )
+            })
+            .clone()
+    })
 }
 
 /// Short permissions, only when unusual: `rwx`, `suid`, `sgid`, `o+w`.

@@ -117,6 +117,10 @@ struct Cli {
     #[arg(short = 'L', long = "depth", value_name = "N", help_heading = "Layout")]
     depth: Option<usize>,
 
+    /// All columns (ls -lah style)
+    #[arg(short = 'l', long, help_heading = "Layout")]
+    long: bool,
+
     /// Display order inside a directory
     #[arg(long, value_enum, value_name = "KEY", help_heading = "Layout")]
     sort: Option<SortArg>,
@@ -149,6 +153,10 @@ struct Cli {
         help_heading = "Content"
     )]
     preview: PreviewArg,
+
+    /// Find duplicate files: fold copies of visible files
+    #[arg(long, help_heading = "Content")]
+    dupes: bool,
 
     /// List only files whose content does not match the extension
     #[arg(long, help_heading = "Content")]
@@ -282,6 +290,10 @@ pub struct Opts {
     pub why: Option<PathBuf>,
     /// `--stats`: header, type table, footer.
     pub stats: bool,
+    /// `-l`: mode, owner, group, and the oldest age.
+    pub long: bool,
+    /// `--dupes`: fold copies of visible files.
+    pub dupes: bool,
     pub detect: DetectMode,
     pub preview: PreviewMode,
     /// `--mismatches`: the list view.
@@ -365,6 +377,8 @@ where
         focus: cli.focus,
         why: cli.why,
         stats: cli.stats,
+        long: cli.long,
+        dupes: cli.dupes,
         detect: match cli.detect {
             DetectArg::Off => DetectMode::Off,
             DetectArg::Fast => DetectMode::Fast,

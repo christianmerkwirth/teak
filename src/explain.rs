@@ -59,9 +59,11 @@ pub fn why(
         None if rule.1.is_empty() => "class: none".to_string(),
         None => format!("class: none ({})", rule.1),
         Some(c) => {
-            // A content check changes the tag after the names.
+            // A content check or `--dupes` changes the tag after the names.
             let text = if tag.source == rule.0.source && tag.class == rule.0.class {
                 rule.1.clone()
+            } else if let Some(&orig) = scan.dupes.get(&id) {
+                format!("= {}", display(tree, orig))
             } else {
                 let mut t = "content check".to_string();
                 if let Some(l) = scan.template_label(id) {

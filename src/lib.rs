@@ -8,6 +8,7 @@ pub mod cache;
 pub mod chaff;
 pub mod cli;
 pub mod detect;
+pub mod dupes;
 pub mod explain;
 pub mod fnv;
 pub mod git;
@@ -179,6 +180,8 @@ pub struct Scan {
     pub previews: HashMap<NodeId, String>,
     /// The `--why` lines (FR-60).
     pub why: Option<Vec<String>>,
+    /// `--dupes`: copy → original (FR-43).
+    pub dupes: HashMap<NodeId, NodeId>,
 }
 
 impl Scan {
@@ -385,6 +388,7 @@ pub fn build(
             git_head,
             previews: HashMap::new(),
             why: None,
+            dupes: HashMap::new(),
         });
     }
     let weights = salience::Weights::default();
@@ -483,6 +487,38 @@ pub fn build(
         }
         select::apply_content(&mut view, &tree, &aggs, &tags, &moved);
     }
+    let mut dupes = HashMap::new();
+    if opts.dupes {
+        let _t = timer("dupes");
+        let visible: Vec<NodeId> = view
+            .rows
+            .iter()
+            .filter_map(|r| match r.kind {
+                view::RowKind::Entry { node, .. } if !tree.node(node).is_dir() => Some(node),
+                _ => None,
+            })
+            .collect();
+        dupes = dupes::find(&tree, &visible, |id| {
+            matches!(
+                tags[id as usize].action,
+                chaff::Action::Fold | chaff::Action::Hide
+            )
+        });
+        let mut copies: Vec<NodeId> = dupes.keys().copied().collect();
+        copies.sort_unstable();
+        let mut moved = Vec::new();
+        for id in copies {
+            let tag = classifier.content_tag(&tree, id, chaff::ChaffClass::Duplicate, 0);
+            tags[id as usize] = tag;
+            if matches!(tag.action, chaff::Action::Fold | chaff::Action::Hide) {
+                moved.push(id);
+            }
+        }
+        if moved.iter().any(|&id| chaff::is_hidden(&tags, id)) {
+            aggs = aggregate::compute(&tree, |id| chaff::is_hidden(&tags, id));
+        }
+        select::apply_content(&mut view, &tree, &aggs, &tags, &moved);
+    }
     let kinds = project_kinds(&tree, &labels, opts, git_head.is_some());
     let previews = {
         let _t = timer("preview");
@@ -502,6 +538,7 @@ pub fn build(
         git_head,
         previews,
         why: None,
+        dupes,
     };
     if let (Some(id), Some(terms)) = (why_id, why_terms) {
         let rule = classifier.why(&scan.tree, id);
@@ -581,6 +618,7 @@ pub fn layout_opts(opts: &Opts, set: &Settings) -> LayoutOpts {
         units: opts.units,
         time: opts.time,
         preview: opts.preview,
+        long: opts.long,
     }
 }
 
