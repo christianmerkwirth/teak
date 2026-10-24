@@ -92,12 +92,17 @@ impl Pack {
 
     /// The class of a sibling entry, if the pack names it.
     pub fn class_of(&self, name: &[u8], is_dir: bool) -> Option<ChaffClass> {
-        self.entries.iter().find_map(|&(pat, class)| {
+        self.entry_of(name, is_dir).map(|(_, class)| class)
+    }
+
+    /// The pattern and the class of a sibling entry, if the pack names it.
+    pub fn entry_of(&self, name: &[u8], is_dir: bool) -> Option<(&'static str, ChaffClass)> {
+        self.entries.iter().copied().find(|&(pat, _)| {
             let (pat, dir_only) = match pat.strip_suffix('/') {
                 Some(p) => (p, true),
                 None => (pat, false),
             };
-            (pat.as_bytes() == name && dir_only == is_dir).then_some(class)
+            pat.as_bytes() == name && dir_only == is_dir
         })
     }
 }

@@ -623,17 +623,7 @@ impl Cx<'_> {
     fn series_cells(&self, prefix: String, series: &Series) -> Cells {
         let g = self.opts.glyphs;
         let tree = self.tree();
-        let mut name = String::new();
-        for part in &series.parts {
-            match part {
-                Part::Lit(b) => name.push_str(&escape(b)),
-                Part::Range(a, b) => {
-                    let _ = write!(name, "[{}{}{}]", escape(a), g.dash, escape(b));
-                }
-                Part::Hash => name.push_str("[hash]"),
-                Part::Uuid => name.push_str("[uuid]"),
-            }
-        }
+        let name = series_name(series, g);
         let count = if series.missing > 0 {
             format!(
                 "{} of {}",
@@ -1086,6 +1076,119 @@ impl Cx<'_> {
         trim_end(&mut spans);
         Line { spans, dim }
     }
+}
+
+/// The name of a series row: `IMG_[0001–3188].png`.
+pub fn series_name(series: &Series, g: &Glyphs) -> String {
+    let mut name = String::new();
+    for part in &series.parts {
+        match part {
+            Part::Lit(b) => name.push_str(&escape(b)),
+            Part::Range(a, b) => {
+                let _ = write!(name, "[{}{}{}]", escape(a), g.dash, escape(b));
+            }
+            Part::Hash => name.push_str("[hash]"),
+            Part::Uuid => name.push_str("[uuid]"),
+        }
+    }
+    name
+}
+
+/// `--stats` (FR-61): the header, a table of type groups with file counts
+/// and sizes (by size, high first), and the footer. No tree rows. The
+/// table is cut to fit the budget.
+pub fn stats(scan: &Scan, opts: &LayoutOpts) -> Vec<Line> {
+    let cx = Cx { scan, opts };
+    let tree = &scan.tree;
+    let mut groups: Vec<(TypeGroup, u64, u64)> = Vec::new();
+    let mut id: NodeId = 0;
+    while (id as usize) < tree.len() {
+        if crate::chaff::is_hidden(&scan.tags, id) {
+            id = tree.node(id).end;
+            continue;
+        }
+        let n = tree.node(id);
+        if !n.is_dir() {
+            let g = label(scan.labels[id as usize]).group;
+            match groups.iter_mut().find(|(x, _, _)| *x == g) {
+                Some((_, f, b)) => {
+                    *f += 1;
+                    *b += n.size;
+                }
+                None => groups.push((g, 1, n.size)),
+            }
+        }
+        id += 1;
+    }
+    groups.sort_by(|a, b| {
+        b.2.cmp(&a.2)
+            .then(b.1.cmp(&a.1))
+            .then(a.0.name().cmp(b.0.name()))
+    });
+    let (budget, total_files, folded, hidden) = scan
+        .view
+        .rows
+        .iter()
+        .find_map(|r| match &r.kind {
+            RowKind::Footer {
+                budget,
+                total_files,
+                folded,
+                hidden,
+                ..
+            } => Some((*budget, *total_files, folded.clone(), hidden.clone())),
+            _ => None,
+        })
+        .unwrap_or((
+            scan.view.budget,
+            tree.file_count(ROOT),
+            Vec::new(),
+            Vec::new(),
+        ));
+    // Header, table head, rows, footer.
+    let room = budget.saturating_sub(3);
+    groups.truncate(room);
+    let mut table: Vec<[String; 3]> = vec![["group".into(), "files".into(), "size".into()]];
+    for (g, files, bytes) in &groups {
+        table.push([g.name().to_string(), thousands(*files), cx.size(*bytes)]);
+    }
+    let w0 = table.iter().map(|r| r[0].width()).max().unwrap_or(0);
+    let w1 = table.iter().map(|r| r[1].width()).max().unwrap_or(0);
+    let w2 = table.iter().map(|r| r[2].width()).max().unwrap_or(0);
+    let mut lines = vec![Line {
+        spans: cx.header(),
+        dim: false,
+    }];
+    for r in &table {
+        let text = format!(
+            "{:<w0$}  {:>w1$}  {:>w2$}",
+            r[0],
+            r[1],
+            r[2],
+            w0 = w0,
+            w1 = w1,
+            w2 = w2
+        );
+        lines.push(Line {
+            spans: vec![plain(text.trim_end().to_string())],
+            dim: false,
+        });
+    }
+    let used = lines.len() + 1;
+    lines.push(Line {
+        spans: vec![plain(cx.footer(
+            used,
+            budget,
+            total_files,
+            &folded,
+            &hidden,
+        ))],
+        dim: false,
+    });
+    lines
+        .into_iter()
+        .map(|l| cut_line(l, opts.width, opts.glyphs.ellipsis))
+        .collect()
 }
 
 /// The width of a preview with `--preview short`.

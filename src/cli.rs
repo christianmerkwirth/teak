@@ -121,6 +121,10 @@ struct Cli {
     #[arg(long, value_enum, value_name = "KEY", help_heading = "Layout")]
     sort: Option<SortArg>,
 
+    /// Spend most of the budget on PATH, keep the context around it
+    #[arg(long, value_name = "PATH", help_heading = "Layout")]
+    focus: Option<PathBuf>,
+
     /// Smallest group that becomes a series row
     #[arg(long = "series-min", value_name = "N", default_value_t = 4,
           value_parser = clap::value_parser!(u64).range(2..), help_heading = "Layout")]
@@ -246,6 +250,14 @@ struct Cli {
     #[arg(long = "no-git", help_heading = "Output")]
     no_git: bool,
 
+    /// Explain the decision for PATH
+    #[arg(long, value_name = "PATH", help_heading = "Help")]
+    why: Option<PathBuf>,
+
+    /// Print only the header, the type table, and the footer
+    #[arg(long, help_heading = "Help")]
+    stats: bool,
+
     /// Walk threads
     #[arg(short = 'j', long = "threads", value_name = "N",
           value_parser = clap::value_parser!(u64).range(1..), help_heading = "Help")]
@@ -264,6 +276,12 @@ pub struct Opts {
     pub depth: Option<usize>,
     pub sort: SortKey,
     pub series_min: usize,
+    /// `--focus`, relative to the current directory.
+    pub focus: Option<PathBuf>,
+    /// `--why`, relative to the current directory.
+    pub why: Option<PathBuf>,
+    /// `--stats`: header, type table, footer.
+    pub stats: bool,
     pub detect: DetectMode,
     pub preview: PreviewMode,
     /// `--mismatches`: the list view.
@@ -299,7 +317,7 @@ impl std::fmt::Display for UsageError {
 
 pub enum Parsed {
     Version,
-    Run(Opts),
+    Run(Box<Opts>),
 }
 
 /// Parses the arguments (the first one is the program name).
@@ -344,6 +362,9 @@ where
             Some(SortArg::Type) => SortKey::Type,
         },
         series_min: cli.series_min as usize,
+        focus: cli.focus,
+        why: cli.why,
+        stats: cli.stats,
         detect: match cli.detect {
             DetectArg::Off => DetectMode::Off,
             DetectArg::Fast => DetectMode::Fast,
@@ -390,7 +411,7 @@ where
         no_git: cli.no_git,
         threads: cli.threads.map(|t| t as usize),
     };
-    Ok(Parsed::Run(opts))
+    Ok(Parsed::Run(Box::new(opts)))
 }
 
 fn action_of(a: ActionArg) -> Action {

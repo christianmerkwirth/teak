@@ -496,7 +496,7 @@ pub fn read_report(path: &Path) -> Report {
 pub fn opts(args: &[&str]) -> teak::cli::Opts {
     let argv = std::iter::once("teak").chain(args.iter().copied());
     match teak::cli::parse_from(argv).expect("valid flags") {
-        teak::cli::Parsed::Run(opts) => opts,
+        teak::cli::Parsed::Run(opts) => *opts,
         teak::cli::Parsed::Version => panic!("--version is not a scan"),
     }
 }

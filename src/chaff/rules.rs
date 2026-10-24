@@ -118,3 +118,25 @@ pub fn by_name(name: &[u8], is_dir: bool) -> Option<ChaffClass> {
         .find(|(s, _)| name.len() > s.len() && name.ends_with(s))
         .map(|&(_, class)| class)
 }
+
+/// The [`GLOBAL`] pattern that gives [`by_name`] its answer, for `--why`.
+pub fn pattern_of(name: &[u8], is_dir: bool) -> Option<&'static str> {
+    let exact = |want_dir: bool| {
+        GLOBAL.iter().find_map(|&(pat, _)| {
+            let (p, dir) = match pat.strip_suffix('/') {
+                Some(p) => (p, true),
+                None => (pat, false),
+            };
+            (dir == want_dir && !p.starts_with('*') && p.as_bytes() == name).then_some(pat)
+        })
+    };
+    if is_dir {
+        return exact(true);
+    }
+    exact(false).or_else(|| {
+        GLOBAL.iter().find_map(|&(pat, _)| {
+            let suffix = pat.strip_prefix('*')?;
+            (name.len() > suffix.len() && name.ends_with(suffix.as_bytes())).then_some(pat)
+        })
+    })
+}

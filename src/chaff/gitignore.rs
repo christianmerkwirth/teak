@@ -42,4 +42,20 @@ impl DirRules {
             Match::None => None,
         }
     }
+
+    /// The rule that decides `rel`, and the file it comes from, for
+    /// `--why`: `*.log in ./.gitignore`.
+    pub fn why(&self, rel: &[u8], is_dir: bool) -> Option<String> {
+        let m = self
+            .matcher
+            .matched(Path::new(OsStr::from_bytes(rel)), is_dir);
+        let glob = match m {
+            Match::Ignore(g) | Match::Whitelist(g) => g,
+            Match::None => return None,
+        };
+        Some(match glob.from() {
+            Some(from) => format!("{} in {}", glob.original(), from.display()),
+            None => glob.original().to_string(),
+        })
+    }
 }

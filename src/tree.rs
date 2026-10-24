@@ -205,11 +205,14 @@ impl Tree {
 
     /// The node at a `/`-joined path below the root.
     pub fn find(&self, rel: &str) -> Option<NodeId> {
+        self.find_bytes(rel.as_bytes())
+    }
+
+    /// [`Tree::find`] for name bytes that may not be UTF-8.
+    pub fn find_bytes(&self, rel: &[u8]) -> Option<NodeId> {
         let mut cur = ROOT;
-        for part in rel.split('/').filter(|p| !p.is_empty()) {
-            cur = self
-                .children(cur)
-                .find(|&c| self.name(c) == part.as_bytes())?;
+        for part in rel.split(|&b| b == b'/').filter(|p| !p.is_empty()) {
+            cur = self.children(cur).find(|&c| self.name(c) == part)?;
         }
         Some(cur)
     }

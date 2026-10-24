@@ -44,6 +44,8 @@ pub struct SelectOpts {
     pub depth: Option<usize>,
     pub series_min: usize,
     pub sort: SortKey,
+    /// `--focus`: its ancestors (and itself) open first (FR-18).
+    pub focus: Option<NodeId>,
 }
 
 /// Builds the view for a budget of at least 3 lines.
@@ -76,6 +78,9 @@ pub fn plan(inp: &SelectInputs, budget: usize, opts: &SelectOpts) -> View {
             },
         });
     } else if p.open_root(rows_budget) {
+        if let Some(f) = opts.focus {
+            p.open_path(f);
+        }
         p.run();
         p.emit(ROOT, 1, &mut rows);
     } else {
@@ -348,11 +353,87 @@ impl Planner<'_> {
         });
     }
 
+    /// Opens the directories from the root to `focus` (and `focus`, if it
+    /// is one), while the budget lasts: each one shows the next directory
+    /// on the path first. `-L` and uniform directories stop it.
+    fn open_path(&mut self, focus: NodeId) {
+        let tree = self.inp.tree;
+        let holds = |c: &Cand| match &c.unit {
+            Unit::Node(id) => *id <= focus && focus < tree.node(*id).end,
+            Unit::Series(_) => false,
+        };
+        let mut cur = ROOT;
+        while cur != focus {
+            let st = &self.states[&cur];
+            let Some(i) = st.cands.iter().position(holds) else {
+                return;
+            };
+            let depth = st.depth;
+            if i >= st.shown {
+                let cost = Self::reveal_cost(st);
+                if cost > self.left {
+                    return;
+                }
+                self.left -= cost;
+                let st = self.states.get_mut(&cur).unwrap();
+                let cand = st.cands.remove(i);
+                st.cands.insert(st.shown, cand);
+                st.shown += 1;
+            }
+            let st = &self.states[&cur];
+            let Some(cand) = st.cands.iter().find(|c| holds(c)).cloned() else {
+                return;
+            };
+            let Some(tail) = cand.tail(tree) else {
+                return;
+            };
+            if self.is_open(tail) {
+                cur = tail;
+                continue;
+            }
+            if self.opts.depth.is_some_and(|limit| depth + 2 > limit) {
+                return;
+            }
+            self.ensure(tail, depth + 1);
+            let st = self.states.get_mut(&tail).unwrap();
+            if st.uniform.is_some() {
+                return;
+            }
+            if let Some(j) = st.cands.iter().position(holds) {
+                let c = st.cands.remove(j);
+                st.cands.insert(0, c);
+            }
+            let (cost, _) = Self::open_cost(st, 0.0);
+            if cost > self.left {
+                return;
+            }
+            self.left -= cost;
+            let st = self.states.get_mut(&tail).unwrap();
+            st.open = true;
+            st.shown = st.cands.len().min(1);
+            let first = st.cands.first().cloned();
+            self.push_reveal(tail);
+            if let Some(first) = first.filter(|c| !holds(c) || tail == focus) {
+                self.push_open(&first, depth + 2);
+            }
+            cur = tail;
+        }
+    }
+
     fn run(&mut self) {
         while let Some(item) = self.heap.pop() {
             match item.step {
                 Step::Reveal(dir) => {
                     let st = &self.states[&dir];
+                    // The focus path can reveal out of order: a stale item
+                    // goes back with the ratio of the real next child.
+                    let Some(next) = st.cands.get(st.shown) else {
+                        continue;
+                    };
+                    if next.unit.first() != item.key {
+                        self.push_reveal(dir);
+                        continue;
+                    }
                     let cost = Self::reveal_cost(st);
                     if cost > self.left {
                         continue;

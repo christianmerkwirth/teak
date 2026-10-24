@@ -95,6 +95,23 @@ pub enum TypeGroup {
     Unknown,
 }
 
+impl TypeGroup {
+    /// The name in `--stats`.
+    pub fn name(self) -> &'static str {
+        match self {
+            TypeGroup::Code => "code",
+            TypeGroup::Text => "text",
+            TypeGroup::Data => "data",
+            TypeGroup::Image => "image",
+            TypeGroup::Av => "audio/video",
+            TypeGroup::Archive => "archive",
+            TypeGroup::Exec => "exec",
+            TypeGroup::Binary => "binary",
+            TypeGroup::Unknown => "other",
+        }
+    }
+}
+
 pub struct Label {
     pub name: &'static str,
     pub group: TypeGroup,

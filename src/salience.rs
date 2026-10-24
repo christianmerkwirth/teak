@@ -44,6 +44,8 @@ pub struct ScoreInputs<'a> {
     pub aggs: &'a Aggs,
     pub tags: &'a [ChaffTag],
     pub git: Option<&'a GitStatus>,
+    /// `--focus`.
+    pub focus: Option<NodeId>,
 }
 
 /// The term values of one node, each in `[0, 1]`.
@@ -55,10 +57,14 @@ pub struct Terms {
     pub rarity: f32,
     pub role: f32,
     pub anomaly: f32,
+    /// The chaff factor: 1, or [`CHAFF_FACTOR`] for dim and gitignored.
     pub factor: f32,
+    /// The `--focus` boost: 1 on the focus path, half for each step away.
+    pub focus: f32,
 }
 
 impl Terms {
+    /// `clamp(Σ wᵢ·termᵢ) × factor + focus` (design.md §Salience defaults).
     pub fn score(&self, w: &Weights) -> f32 {
         let sum = w.size * self.size
             + w.recency * self.recency
@@ -66,7 +72,7 @@ impl Terms {
             + w.rarity * self.rarity
             + w.role * self.role
             + w.anomaly * self.anomaly;
-        sum.clamp(0.0, 1.0) * self.factor
+        sum.clamp(0.0, 1.0) * self.factor + self.focus
     }
 }
 
@@ -84,12 +90,19 @@ pub fn score(inp: &ScoreInputs, w: &Weights) -> Scores {
     Scores { score }
 }
 
+/// The terms of one node, for `--why`.
+pub fn terms(inp: &ScoreInputs, id: NodeId) -> Terms {
+    Context::new(inp).terms(inp, id)
+}
+
 /// Tree-wide facts that the terms compare against.
 struct Context {
     total: u64,
     scan_time: i64,
     /// Per node: the rarity term.
     rarity: Vec<f32>,
+    /// Per node: the focus boost (empty without `--focus`).
+    focus: Vec<f32>,
 }
 
 /// Ages at or above this get no recency.
@@ -101,6 +114,7 @@ impl Context {
             total: inp.aggs.get(inp.tree, ROOT).size,
             scan_time: inp.tree.scan_time,
             rarity: rarity(inp.tree),
+            focus: inp.focus.map_or_else(Vec::new, |f| focus(inp.tree, f)),
         }
     }
 
@@ -138,8 +152,45 @@ impl Context {
             role: role(tree.name(id), node.kind),
             anomaly: anomaly(tree, id, self.total),
             factor,
+            focus: self.focus.get(id as usize).copied().unwrap_or(0.0),
         }
     }
+}
+
+/// The focus boost of every node. The path from the root to the focus and
+/// the children of the focus get 1. Below that, each step down halves it;
+/// outside the focus, each step away from the path halves it.
+fn focus(tree: &Tree, focus: NodeId) -> Vec<f32> {
+    let mut on_path = vec![false; tree.len()];
+    let mut cur = focus;
+    loop {
+        on_path[cur as usize] = true;
+        if cur == ROOT {
+            break;
+        }
+        cur = tree.node(cur).parent;
+    }
+    let inside = focus..tree.node(focus).end;
+    // Pre-order ids: a parent comes before its children.
+    let mut steps = vec![0u32; tree.len()];
+    let mut out = vec![0.0; tree.len()];
+    for id in 0..tree.len() as NodeId {
+        let i = id as usize;
+        if on_path[i] {
+            steps[i] = 0;
+        } else {
+            let p = tree.node(id).parent as usize;
+            steps[i] = steps[p] + 1;
+        }
+        // The children of the focus are on it too.
+        let s = if inside.contains(&id) && id != focus {
+            steps[i] - 1
+        } else {
+            steps[i]
+        };
+        out[i] = 0.5f32.powi(s as i32);
+    }
+    out
 }
 
 /// 1 for a modified, added, or untracked file. A directory scores by the

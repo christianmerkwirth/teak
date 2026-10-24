@@ -297,6 +297,105 @@ impl<'a> Classifier<'a> {
         (tags, ignored)
     }
 
+    /// The name tag of one node and the rule behind it, for `--why`:
+    /// `global rule: node_modules/`, `*.log in ./.gitignore`, or for an
+    /// entry in a folded directory, `inside node_modules/: …`. Only the
+    /// frames of the ancestors are made.
+    pub fn why(&self, tree: &Tree, id: NodeId) -> (ChaffTag, String) {
+        let mut chain = Vec::new();
+        let mut cur = id;
+        while cur != ROOT && cur != NONE {
+            chain.push(cur);
+            cur = tree.node(cur).parent;
+        }
+        chain.reverse();
+        if tree.is_empty() || !tree.node(ROOT).is_dir() || chain.is_empty() {
+            return (ChaffTag::NONE, String::new());
+        }
+        let mut path: Vec<u8> = Vec::new();
+        let mut stack = vec![self.frame(tree, ROOT, &path, ChaffTag::NONE, false)];
+        let mut folded: Option<(Vec<u8>, String)> = None;
+        for &a in &chain {
+            if !path.is_empty() {
+                path.push(b'/');
+            }
+            path.extend_from_slice(tree.name(a));
+            let parent = stack.last().expect("the root frame").tag;
+            let (tag, text) = match (&folded, parent.action) {
+                (Some((at, text)), Action::Fold | Action::Hide) => (
+                    ChaffTag {
+                        source: Source::Inherited,
+                        ..parent
+                    },
+                    format!("inside {}/: {text}", String::from_utf8_lossy(at)),
+                ),
+                _ => {
+                    let tag = self.classify(tree, a, &path, &stack);
+                    let text = self.rule_text(tree, a, &path, &stack, &tag);
+                    (tag, text)
+                }
+            };
+            if a == id {
+                return (tag, text);
+            }
+            if folded.is_none() && matches!(tag.action, Action::Fold | Action::Hide) {
+                folded = Some((path.clone(), text));
+            }
+            if tree.node(a).is_dir() {
+                let frame = self.frame(tree, a, &path, tag, false);
+                stack.push(frame);
+            }
+        }
+        (ChaffTag::NONE, String::new())
+    }
+
+    /// The rule text for a tag that [`Classifier::classify`] gave.
+    fn rule_text(
+        &self,
+        tree: &Tree,
+        id: NodeId,
+        rel: &[u8],
+        stack: &[Frame],
+        tag: &ChaffTag,
+    ) -> String {
+        let node = tree.node(id);
+        let name = tree.name(id);
+        let is_dir = node.is_dir();
+        match tag.source {
+            Source::Gitattributes => match tag.class {
+                Some(ChaffClass::Vendor) => "linguist-vendored in .gitattributes".to_string(),
+                _ => "linguist-generated in .gitattributes".to_string(),
+            },
+            Source::Pack => stack
+                .last()
+                .and_then(|f| {
+                    f.packs
+                        .iter()
+                        .find_map(|p| p.entry_of(name, is_dir).map(|(pat, _)| (p.marker, pat)))
+                })
+                .map_or_else(String::new, |(marker, pat)| format!("{marker} pack: {pat}")),
+            Source::Global if tag.class == Some(ChaffClass::Empty) => {
+                if is_dir {
+                    "empty directory".to_string()
+                } else {
+                    "empty file".to_string()
+                }
+            }
+            Source::Global => rules::pattern_of(name, is_dir)
+                .map_or_else(String::new, |p| format!("global rule: {p}")),
+            Source::Gitignore => stack
+                .iter()
+                .rev()
+                .filter_map(|f| f.ignore.as_ref())
+                .find_map(|g| g.why(rel, is_dir))
+                .map_or_else(|| "gitignore".to_string(), |w| format!("gitignore: {w}")),
+            Source::Hidden => "dotfile".to_string(),
+            Source::Content => "content check".to_string(),
+            Source::User => "user rule".to_string(),
+            Source::None | Source::Inherited => String::new(),
+        }
+    }
+
     fn classify(&self, tree: &Tree, id: NodeId, rel: &[u8], stack: &[Frame]) -> ChaffTag {
         let node = tree.node(id);
         let name = tree.name(id);

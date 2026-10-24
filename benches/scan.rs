@@ -20,7 +20,7 @@ fn tree(files: u64) -> Option<PathBuf> {
 
 fn scan_and_layout(root: &Path) -> usize {
     let opts = match teak::cli::parse_from(["teak", "--detect", "fast"]).unwrap() {
-        teak::cli::Parsed::Run(o) => o,
+        teak::cli::Parsed::Run(o) => *o,
         teak::cli::Parsed::Version => unreachable!(),
     };
     let env = teak::Env::fixed(1_750_000_000);

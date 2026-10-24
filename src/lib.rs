@@ -8,6 +8,7 @@ pub mod cache;
 pub mod chaff;
 pub mod cli;
 pub mod detect;
+pub mod explain;
 pub mod fnv;
 pub mod git;
 pub mod io;
@@ -176,6 +177,8 @@ pub struct Scan {
     pub git_head: Option<git::GitHead>,
     /// The previews of the visible files (FR-56).
     pub previews: HashMap<NodeId, String>,
+    /// The `--why` lines (FR-60).
+    pub why: Option<Vec<String>>,
 }
 
 impl Scan {
@@ -273,6 +276,24 @@ fn checks_on(opts: &Opts) -> bool {
     opts.detect != detect::DetectMode::Off
 }
 
+/// Why a root gives no view.
+#[derive(Debug)]
+pub enum BuildError {
+    /// The root cannot be read (exit code 1).
+    Scan(ScanError),
+    /// A bad `--focus` or `--why` path (exit code 2).
+    Usage(cli::UsageError),
+}
+
+impl std::fmt::Display for BuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BuildError::Scan(e) => e.fmt(f),
+            BuildError::Usage(e) => e.fmt(f),
+        }
+    }
+}
+
 /// Scans one root and builds its view.
 pub fn build(
     root: &Path,
@@ -280,7 +301,15 @@ pub fn build(
     cx: &mut Context,
     budget: usize,
     scan_time: i64,
-) -> Result<Scan, ScanError> {
+) -> Result<Scan, BuildError> {
+    let rel = |p: &Option<PathBuf>, flag: &str| {
+        p.as_deref()
+            .map(|p| explain::resolve(root, p, flag).map(|r| (p.to_path_buf(), r)))
+            .transpose()
+            .map_err(BuildError::Usage)
+    };
+    let focus_rel = rel(&opts.focus, "--focus")?;
+    let why_rel = rel(&opts.why, "--why")?;
     let threads = opts
         .threads
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
@@ -294,8 +323,17 @@ pub fn build(
                 threads,
             },
             scan_time,
-        )?
+        )
+        .map_err(BuildError::Scan)?
     };
+    let node = |r: &Option<(PathBuf, Vec<u8>)>, flag: &str| {
+        r.as_ref()
+            .map(|(p, rel)| explain::find(&tree, rel, p, flag))
+            .transpose()
+            .map_err(BuildError::Usage)
+    };
+    let focus = node(&focus_rel, "--focus")?;
+    let why_id = node(&why_rel, "--why")?;
     let repo = if opts.no_git { None } else { git::open(root) };
     let classifier = chaff::Classifier::new(&tree, &opts.chaff, &cx.templates);
     let (mut tags, ignored) = {
@@ -346,19 +384,24 @@ pub fn build(
             git,
             git_head,
             previews: HashMap::new(),
+            why: None,
         });
     }
+    let weights = salience::Weights::default();
+    let mut why_terms = None;
     let mut view = {
         let _t = timer("select");
-        let scores = salience::score(
-            &salience::ScoreInputs {
-                tree: &tree,
-                aggs: &aggs,
-                tags: &tags,
-                git: git.as_ref(),
-            },
-            &salience::Weights::default(),
-        );
+        let inputs = salience::ScoreInputs {
+            tree: &tree,
+            aggs: &aggs,
+            tags: &tags,
+            git: git.as_ref(),
+            focus,
+        };
+        let scores = salience::score(&inputs, &weights);
+        if let Some(id) = why_id {
+            why_terms = Some(salience::terms(&inputs, id));
+        }
         select::plan(
             &select::SelectInputs {
                 tree: &tree,
@@ -372,6 +415,7 @@ pub fn build(
                 depth: opts.depth,
                 series_min: opts.series_min,
                 sort: opts.sort,
+                focus,
             },
         )
     };
@@ -444,7 +488,7 @@ pub fn build(
         let _t = timer("preview");
         previews(&view, &tree, &detected, opts)
     };
-    Ok(Scan {
+    let mut scan = Scan {
         tree,
         tags,
         aggs,
@@ -457,7 +501,13 @@ pub fn build(
         git,
         git_head,
         previews,
-    })
+        why: None,
+    };
+    if let (Some(id), Some(terms)) = (why_id, why_terms) {
+        let rule = classifier.why(&scan.tree, id);
+        scan.why = Some(explain::why(&scan, id, &rule, &terms, &weights));
+    }
+    Ok(scan)
 }
 
 /// The previews of the file rows. A file typed from the cache has no head,
@@ -570,7 +620,21 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
                 }
                 let lines = {
                     let _t = timer("layout");
-                    layout::fit(&scan, &lopts)
+                    if let Some(why) = &scan.why {
+                        why.iter()
+                            .map(|l| layout::Line {
+                                spans: vec![layout::Span {
+                                    text: l.clone(),
+                                    paint: layout::Paint::Plain,
+                                }],
+                                dim: false,
+                            })
+                            .collect()
+                    } else if opts.stats {
+                        layout::stats(&scan, &lopts)
+                    } else {
+                        layout::fit(&scan, &lopts)
+                    }
                 };
                 if render::write(&lines, &scan.tree, &style, out).is_err() {
                     // A closed pipe (for example `teak | head`): stop quietly.
@@ -578,7 +642,12 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
                     return code;
                 }
             }
-            Err(e) => {
+            Err(BuildError::Usage(e)) => {
+                let _ = writeln!(err, "teak: {e}");
+                cx.finish(&opts.paths);
+                return 2;
+            }
+            Err(BuildError::Scan(e)) => {
                 let _ = writeln!(err, "teak: {e}");
                 code = 1;
             }
