@@ -1193,7 +1193,6 @@ dependencies = [
  "regex",
  "rustix",
  "serde_json",
- "smallvec",
  "tempfile",
  "terminal_size",
  "unicode-width",

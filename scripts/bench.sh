@@ -13,8 +13,9 @@
 # target/bench/<case>.json. The fixture trees come from examples/gen_tree.rs
 # with seed 42 and live in target/bench-data/ (shared with benches/walk.rs).
 #
-# BENCH_IGNORE_FAILURE=1 lets hyperfine time a teak that exits non-zero (the
-# phase-0 stub exits 2 for every scan).
+# BENCH_IGNORE_FAILURE=1 lets hyperfine time a teak that exits non-zero.
+# The 100k, 1m, magika100, and warmcache cases use --no-cache or
+# --detect full with Magika, which task-3 adds; until then use 10k.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)

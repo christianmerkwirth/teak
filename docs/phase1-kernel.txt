@@ -1,0 +1,61 @@
+# Phase-1 exit check: the Linux kernel tree in 40 lines
+
+Command (run in target/, after `git clone --depth 1` of torvalds/linux):
+
+    teak kernel -n 40 --format plain
+
+Tree: torvalds/linux at 5b0764a53 (2026-10-23), 97,034 files, 1.8 GiB.
+Build: release, default features, task-2 (P1, fast detection).
+Wall time: 0.05 to 0.09 s on the reference machine.
+
+Check by hand: the view is useful.
+- Every top-level area shows with its size, file count, type mix, and
+  sub-directory count.
+- The budget goes to drivers/ (1.1 GiB of 1.8 GiB), down to the bulk in
+  drivers/gpu/drm/amd/ (561 MiB). Key files show: Makefile, Kconfig, README.
+- .git/ and the dotfiles are hidden and counted in the footer; the
+  boilerplate dotfiles fold into one chaff line.
+- Exactly 40 lines; no line is wider than 120 columns.
+
+Output:
+
+kernel/  1.8G · 97,034 files
+├── Documentation/                       56M   12k  rst 55% yaml 29% svg 6% +16 types · 742 dirs      52m
+├── arch/                               121M   19k  c 49% devicetree 41% asm 6% +10 types · 935 dirs  52m
+├── drivers/                            1.1G   38k  c 99% +17 types                                   52m
+│   ├── accel/                           14M   566  c 100% +3 types · 24 dirs                         52m
+│   ├── clk/                             24M  1.5k  c 99% kconfig 1% +2 types · 56 dirs               52m
+│   ├── gpu/                            619M  8.5k  c 99% +13 types                                   52m
+│   │   ├── drm/                        617M  8.3k  c 100% +13 types                                  52m
+│   │   │   ├── amd/                    561M  3.1k  c 100% +5 types · 396 dirs                        52m
+│   │   │   ├── Kconfig                  11K        kconfig                                           52m
+│   │   │   ├── Kconfig.debug           3.3K        kconfig                                           52m
+│   │   │   ├── Makefile                7.5K        makefile                                          52m
+│   │   │   ├── drm_panic_helper_qr.rs   34K        rust                                              52m
+│   │   │   └── … 70 dirs, 104 files     57M  5.2k  c 96% xml 2% unknown 1% +9 types                  52m
+│   │   ├── Makefile                    2.8K        makefile                                          52m
+│   │   └── … 6 dirs, 2 files           1.3M   205  c 54% rust 46% +3 types                           52m
+│   ├── media/                           42M  3.1k  c 99% kconfig 1% +1 type · 209 dirs               52m
+│   ├── net/                            147M  7.0k  c 100% +6 types                                   52m
+│   │   ├── ethernet/                    72M  3.5k  c 100% +2 types · 248 dirs                        52m
+│   │   ├── wireless/                    57M  2.4k  c 100% +3 types · 106 dirs                        52m
+│   │   ├── LICENSE.SRC                  891        txt                                               52m
+│   │   ├── Makefile                    2.3K        makefile                                          52m
+│   │   ├── tun_vnet.h                  6.6K        c                                                 52m
+│   │   └── … 29 dirs, 30 files          17M  1.1k  c 99% kconfig 1% +5 types                         52m
+│   ├── pinctrl/                         18M   657  c 99% kconfig 1% +1 type · 35 dirs                52m
+│   ├── scsi/                            29M   869  c 98% unknown 2% +5 types · 46 dirs               52m
+│   ├── usb/                             15M   868  c 99% kconfig 1% +3 types · 39 dirs               52m
+│   ├── Makefile                        5.4K        makefile                                          52m
+│   └── … 136 dirs, 1 file              201M   15k  c 98% kconfig 1% unknown 1% +8 types              52m
+├── fs/                                  46M  2.3k  c 99% unknown 1% +3 types · 96 dirs               52m
+├── include/                             46M  6.7k  c 100% +3 types · 345 dirs                        52m
+├── kernel/                              16M   749  c 99% kconfig 1% +4 types · 47 dirs               52m
+├── net/                                 33M  1.9k  c 99% kconfig 1% +3 types · 87 dirs               52m
+├── sound/                               49M  3.0k  c 99% kconfig 1% +3 types · 187 dirs              52m
+├── tools/                               79M   10k  c 49% json 34% shell 7% +22 types · 1,052 dirs    52m
+├── Makefile                             81K        makefile                                          52m
+├── README                              5.9K        txt                                               52m
+├── … 15 dirs, 6 files                   38M  3.7k  c 70% rust 15% unknown 3% +17 types               52m
+└── ▪ chaff  .editorconfig · .gitattributes · .gitignore
+── 40 of 40 lines · 97,034 files · folded 3 (boilerplate 3) · hidden 86 (dotfile 57 · vcs 29)
