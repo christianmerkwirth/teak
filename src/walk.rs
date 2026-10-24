@@ -566,6 +566,7 @@ fn build(shards: Vec<Shard>, dir_count: u32) -> Tree {
             node.flags &= !flag::MULTI_LINK;
             if !seen.insert((node.dev, node.ino)) {
                 node.size = 0;
+                node.flags |= flag::LINK_DUP;
             }
         }
     }

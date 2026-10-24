@@ -46,6 +46,8 @@ pub mod flag {
     pub const ROOT: u16 = 1 << 8;
     /// A symlink that `--follow` followed; the kind is the target's kind.
     pub const FOLLOWED: u16 = 1 << 9;
+    /// A repeated hard link: its size counts at the first link only.
+    pub const LINK_DUP: u16 = 1 << 10;
     /// Walk-time only: a non-directory with more than one hard link.
     pub(crate) const MULTI_LINK: u16 = 1 << 15;
 }

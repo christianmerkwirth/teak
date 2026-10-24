@@ -261,39 +261,23 @@ impl Cx<'_> {
                 total_files,
                 folded,
                 hidden,
-            } => {
-                let mut s = format!(
-                    "{} {used} of {budget} lines{}{}",
-                    g.rule,
-                    g.sep,
-                    files_text(*total_files)
-                );
-                for (word, counts) in [("folded", folded), ("hidden", hidden)] {
-                    if counts.is_empty() {
-                        continue;
-                    }
-                    let total: u64 = counts.iter().map(|(_, n)| n).sum();
-                    let parts: Vec<String> = counts
-                        .iter()
-                        .map(|(c, n)| format!("{c} {}", thousands(*n)))
-                        .collect();
-                    let _ = write!(
-                        s,
-                        "{}{word} {} ({})",
-                        g.sep,
-                        thousands(total),
-                        parts.join(g.sep)
-                    );
-                }
-                Prepared::Free(vec![plain(s)], false)
-            }
+            } => Prepared::Free(
+                vec![plain(self.footer(
+                    *used,
+                    *budget,
+                    *total_files,
+                    folded,
+                    hidden,
+                ))],
+                false,
+            ),
             RowKind::Entry { node, joined, open } => Prepared::Table(
                 Box::new(self.node_cells(prefix, *node, joined, *open)),
-                false,
+                self.dimmed(*node),
             ),
             RowKind::Summary { node, joined } => Prepared::Table(
                 Box::new(self.node_cells(prefix, *node, joined, false)),
-                false,
+                self.dimmed(*node),
             ),
             RowKind::Overflow {
                 dirs,
@@ -346,6 +330,59 @@ impl Cx<'_> {
                 bold: *first,
             },
         }
+    }
+
+    /// The footer. When it is too wide, each group lists fewer classes and
+    /// sums up the rest as `+N`.
+    fn footer(
+        &self,
+        used: usize,
+        budget: usize,
+        total_files: u64,
+        folded: &crate::view::ClassCounts,
+        hidden: &crate::view::ClassCounts,
+    ) -> String {
+        let g = self.opts.glyphs;
+        let most = folded.len().max(hidden.len());
+        let text = |limit: usize| {
+            let mut s = format!(
+                "{} {used} of {budget} lines{}{}",
+                g.rule,
+                g.sep,
+                files_text(total_files)
+            );
+            for (word, counts) in [("folded", folded), ("hidden", hidden)] {
+                if counts.is_empty() {
+                    continue;
+                }
+                let total: u64 = counts.iter().map(|(_, n)| n).sum();
+                let _ = write!(s, "{}{word} {}", g.sep, thousands(total));
+                if limit == 0 {
+                    continue;
+                }
+                let mut parts: Vec<String> = counts
+                    .iter()
+                    .take(limit)
+                    .map(|(c, n)| format!("{c} {}", thousands(*n)))
+                    .collect();
+                let rest: u64 = counts.iter().skip(limit).map(|(_, n)| n).sum();
+                if counts.len() > limit {
+                    parts.push(format!("+{}", thousands(rest)));
+                }
+                let _ = write!(s, " ({})", parts.join(g.sep));
+            }
+            s
+        };
+        (0..=most)
+            .rev()
+            .map(text)
+            .find(|t| t.width() <= self.opts.width)
+            .unwrap_or_else(|| text(0))
+    }
+
+    /// A row of an entry with the `dim` action.
+    fn dimmed(&self, id: NodeId) -> bool {
+        self.scan.tags[id as usize].action == crate::chaff::Action::Dim
     }
 
     fn header(&self) -> Vec<Span> {

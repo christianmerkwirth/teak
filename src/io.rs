@@ -23,6 +23,19 @@ pub fn read_head(path: &Path, max: usize) -> io::Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// Reads a rule file (`.gitignore`, `.gitattributes`) of at most `max`
+/// bytes. Rule files steer the walk; they are not content, so the hooks do
+/// not count them (FR-52 counts content reads only).
+///
+/// The caller makes sure that `path` is a regular file and not on a pseudo
+/// file system.
+pub fn read_rule_file(path: &Path, max: usize) -> io::Result<Vec<u8>> {
+    let file = File::open(path)?;
+    let mut buf = Vec::new();
+    file.take(max as u64).read_to_end(&mut buf)?;
+    Ok(buf)
+}
+
 /// A file that Magika reads through its `SyncInput` trait.
 ///
 /// Magika picks the offsets (the first and the last block of the file); each

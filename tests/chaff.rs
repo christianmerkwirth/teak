@@ -227,6 +227,7 @@ fn fr34_small_chaff_line_is_the_last_child() {
 fn hidden_fixture() -> Fixture {
     let fx = Fixture::new();
     fx.file(".env", "API_KEY=x\n")
+        .file(".git/HEAD", "ref: refs/heads/main\n")
         .sized(".git/objects/pack/p.pack", 10 << 20)
         .file(".vscode/settings.json", "{}\n")
         .file(".gitignore", "build.log\n")
@@ -247,7 +248,7 @@ fn fr35_hidden_entries_are_only_counted() {
         assert!(!line.contains(name), "{name}: {line}");
     }
     assert!(line.contains("build.log"), "{line}");
-    assert!(out.footer().contains("hidden 3"), "{}", out.footer());
+    assert!(out.footer().contains("hidden 4"), "{}", out.footer());
 }
 
 #[test]
