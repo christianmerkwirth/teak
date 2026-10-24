@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/OWNER/teak/schema/teak.schema.json",
+  "$id": "https://github.com/christianmerkwirth/teak/schema/teak.schema.json",
   "title": "teak JSON output",
   "description": "The output of `teak --format json` and `teak --json-full`, schema version 1. Several roots give an array of these documents.",
   "type": "object",

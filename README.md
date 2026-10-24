@@ -27,7 +27,7 @@ teak/  61G · 1,298,465 files · rust crate
 
 ```sh
 cargo install teak
-brew install OWNER/tap/teak
+brew install christianmerkwirth/tap/teak
 ```
 
 Release archives for Linux (x86_64, aarch64) and macOS (x86_64, arm64) are on

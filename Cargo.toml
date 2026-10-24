@@ -6,9 +6,8 @@ rust-version = "1.88"
 description = "Fit a large directory tree into a fixed line budget, with real file types from content"
 license = "MIT"
 readme = "README.md"
-# OWNER is a placeholder: set the GitHub owner before the first release.
-repository = "https://github.com/OWNER/teak"
-homepage = "https://github.com/OWNER/teak"
+repository = "https://github.com/christianmerkwirth/teak"
+homepage = "https://github.com/christianmerkwirth/teak"
 keywords = ["tree", "ls", "cli", "magika", "file-type"]
 categories = ["command-line-utilities", "filesystem"]
 # The published crate: the code, the templates, and the docs. The tests,
@@ -112,8 +111,7 @@ strip = true
 cargo-dist-version = "0.32.0"
 ci = "github"
 installers = ["shell", "homebrew"]
-# OWNER is a placeholder, as in `repository`.
-tap = "OWNER/homebrew-tap"
+tap = "christianmerkwirth/homebrew-tap"
 publish-jobs = ["homebrew"]
 # FR-68/FR-69 checks on each OS after the release: release-check.yml.
 post-announce-jobs = ["./release-check"]
