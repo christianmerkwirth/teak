@@ -91,9 +91,9 @@ fn fr48_fast_reads_one_small_head_per_visible_file() {
     let fx = types_fixture();
     fx.sized("big.dat", 10_000);
     let (_, report) = support::run_report(fx.path(), &["--detect", "fast"]);
-    let big = fx.abs("big.dat");
+    // Paths are as teak opens them: below the root `.`.
     assert_eq!(
-        report.reads.get(big.to_str().unwrap()),
+        report.reads.get("./big.dat"),
         Some(&4096),
         "{:?}",
         report.reads

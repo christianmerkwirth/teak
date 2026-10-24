@@ -4,15 +4,62 @@
 //! `txt`), so the fast and full paths give the same words.
 
 pub mod ext;
+pub mod magic;
+pub mod names;
 pub mod secret;
 
 /// The fast path: no model.
 pub mod fast {
-    use super::{Source, TypeInfo, label_id};
+    use super::{Source, TypeInfo, ext, label_id, magic, names};
 
-    /// The type from the name and the first bytes.
-    pub fn type_of(_name: &[u8], _head: Option<&[u8]>) -> TypeInfo {
+    /// The type from the name and the first bytes: exact name rules, then
+    /// magic bytes, then the extension, then a shebang or a text check.
+    ///
+    /// Pre: `head` comes from `io::read_head(path, 4096)`; it is `None` with
+    /// `--detect off`, for non-regular files, and on a pseudo FS.
+    pub fn type_of(name: &[u8], head: Option<&[u8]>) -> TypeInfo {
+        if let Some(l) = names::by_name(name) {
+            return TypeInfo::new(l, Source::Name);
+        }
+        let by_ext = ext::by_name(name);
+        if let Some(head) = head
+            && let Some((l, text)) = magic::by_magic(head)
+            && (!text || by_ext.is_none())
+        {
+            let mut t = TypeInfo::new(l, Source::Magic);
+            t.mismatch = by_ext.filter(|&e| !same_family(e, l));
+            return t;
+        }
+        if let Some(l) = by_ext {
+            return TypeInfo::new(l, Source::Ext);
+        }
+        if let Some(head) = head {
+            if let Some(l) = magic::by_shebang(head) {
+                return TypeInfo::new(l, Source::Magic);
+            }
+            if magic::looks_like_text(head) {
+                return TypeInfo::new(label_id("txt"), Source::Magic);
+            }
+        }
         TypeInfo::new(label_id("unknown"), Source::None)
+    }
+
+    /// An extension label and a magic label that do not conflict: a `.jar`
+    /// is a zip, a `.o` is an ELF file.
+    fn same_family(ext: super::LabelId, magic: super::LabelId) -> bool {
+        const PAIRS: &[(&str, &str)] = &[
+            ("jar", "zip"),
+            ("epub", "zip"),
+            ("docx", "zip"),
+            ("xlsx", "zip"),
+            ("pptx", "zip"),
+            ("object", "elf"),
+            ("gzip", "gzip"),
+            ("svg", "xml"),
+            ("html", "xml"),
+        ];
+        let (e, m) = (super::label(ext).name, super::label(magic).name);
+        e == m || PAIRS.iter().any(|&(a, b)| a == e && b == m)
     }
 }
 
@@ -284,29 +331,59 @@ pub fn name_label(node: &Node, name: &[u8]) -> LabelId {
     if node.size == 0 {
         return label_id("empty");
     }
-    ext::by_name(name).unwrap_or_else(|| label_id("unknown"))
+    names::by_name(name)
+        .or_else(|| ext::by_name(name))
+        .unwrap_or_else(|| label_id("unknown"))
 }
 
-/// Types the files of the visible rows. Slice of task-2: name and stat only.
+/// The head size for fast detection.
+pub const HEAD_MAX: usize = 4096;
+
+/// Types the files of the visible rows, and marks secrets. Content comes
+/// only from `io::read_head`, never with `--detect off`, for non-regular
+/// files, or on a pseudo file system.
 pub fn run(
     view: &crate::view::View,
-    tree: &crate::tree::Tree,
-    labels: &[LabelId],
-    _mode: DetectMode,
+    tree: &mut crate::tree::Tree,
+    _labels: &[LabelId],
+    mode: DetectMode,
 ) -> HashMap<crate::tree::NodeId, TypeInfo> {
+    use crate::tree::flag;
     use crate::view::RowKind;
+    let ids: Vec<crate::tree::NodeId> = view
+        .rows
+        .iter()
+        .filter_map(|row| match row.kind {
+            RowKind::Entry { node, .. } if !tree.node(node).is_dir() => Some(node),
+            _ => None,
+        })
+        .collect();
     let mut out = HashMap::new();
-    for row in &view.rows {
-        if let RowKind::Entry { node, .. } = row.kind
-            && !tree.node(node).is_dir()
-        {
-            let source = if stat_label(tree.node(node)).is_some() {
-                Source::Stat
-            } else {
-                Source::Ext
-            };
-            out.insert(node, TypeInfo::new(labels[node as usize], source));
+    for id in ids {
+        let node = *tree.node(id);
+        let name = tree.name(id).to_vec();
+        if let Some(l) = stat_label(&node) {
+            out.insert(id, TypeInfo::new(l, Source::Stat));
+            continue;
         }
+        let readable = mode != DetectMode::Off
+            && node.kind == Kind::File
+            && node.size > 0
+            && !node.has(flag::PSEUDO_FS);
+        let head = if readable {
+            crate::io::read_head(&tree.path(id), HEAD_MAX).ok()
+        } else {
+            None
+        };
+        let info = if node.size == 0 {
+            TypeInfo::new(label_id("empty"), Source::Stat)
+        } else {
+            fast::type_of(&name, head.as_deref())
+        };
+        if secret::is_secret(&name, head.as_deref()) {
+            tree.nodes[id as usize].flags |= flag::SECRET;
+        }
+        out.insert(id, info);
     }
     out
 }

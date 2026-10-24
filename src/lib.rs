@@ -181,7 +181,7 @@ pub fn build(root: &Path, opts: &Opts, budget: usize, scan_time: i64) -> Result<
     let threads = opts
         .threads
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
-    let tree = {
+    let mut tree = {
         let _t = timer("walk");
         walk::scan(
             root,
@@ -235,7 +235,7 @@ pub fn build(root: &Path, opts: &Opts, budget: usize, scan_time: i64) -> Result<
     };
     let types = {
         let _t = timer("detect");
-        detect::run(&view, &tree, &labels, opts.detect)
+        detect::run(&view, &mut tree, &labels, opts.detect)
     };
     Ok(Scan {
         tree,
