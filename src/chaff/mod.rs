@@ -236,12 +236,29 @@ impl<'a> Classifier<'a> {
     ///
     /// Post: every node has exactly one tag.
     pub fn classify_names(&self, tree: &Tree) -> Vec<ChaffTag> {
+        self.classify_names_and_ignored(tree, false).0
+    }
+
+    /// [`Classifier::classify_names`], and with `track` also one bit per
+    /// node: the gitignore rules match it or a directory above it. The bits
+    /// do not depend on the chaff class, `-a`, or `--no-gitignore`; git
+    /// status needs them (FR-57). Without `track` the bits are empty.
+    pub fn classify_names_and_ignored(
+        &self,
+        tree: &Tree,
+        track: bool,
+    ) -> (Vec<ChaffTag>, Vec<bool>) {
         let mut tags = vec![ChaffTag::NONE; tree.len()];
+        let mut ignored = if track {
+            vec![false; tree.len()]
+        } else {
+            Vec::new()
+        };
         if tree.is_empty() || !tree.node(ROOT).is_dir() {
-            return tags;
+            return (tags, ignored);
         }
         let mut path: Vec<u8> = Vec::new();
-        let mut stack: Vec<Frame> = vec![self.frame(tree, ROOT, &path, ChaffTag::NONE)];
+        let mut stack: Vec<Frame> = vec![self.frame(tree, ROOT, &path, ChaffTag::NONE, track)];
         for id in 1..tree.len() as NodeId {
             while stack.last().is_some_and(|f| f.end <= id) {
                 stack.pop();
@@ -253,6 +270,16 @@ impl<'a> Classifier<'a> {
             }
             path.extend_from_slice(tree.name(id));
             let node = tree.node(id);
+            if track {
+                let parent_id = node.parent;
+                ignored[id as usize] = ignored[parent_id as usize]
+                    || stack
+                        .iter()
+                        .rev()
+                        .filter_map(|f| f.ignore.as_ref())
+                        .find_map(|g| g.matched(&path, node.is_dir()))
+                        == Some(true);
+            }
             let tag = if matches!(parent.tag.action, Action::Fold | Action::Hide) {
                 ChaffTag {
                     source: Source::Inherited,
@@ -263,11 +290,11 @@ impl<'a> Classifier<'a> {
             };
             tags[id as usize] = tag;
             if node.is_dir() {
-                let frame = self.frame(tree, id, &path, tag);
+                let frame = self.frame(tree, id, &path, tag, track);
                 stack.push(frame);
             }
         }
-        tags
+        (tags, ignored)
     }
 
     fn classify(&self, tree: &Tree, id: NodeId, rel: &[u8], stack: &[Frame]) -> ChaffTag {
@@ -340,8 +367,10 @@ impl<'a> Classifier<'a> {
         ChaffTag::NONE
     }
 
-    /// Reads the rule files and markers among the children of `dir`.
-    fn frame(&self, tree: &Tree, dir: NodeId, rel: &[u8], tag: ChaffTag) -> Frame {
+    /// Reads the rule files and markers among the children of `dir`. With
+    /// `track`, the gitignore rules load also when gitignore is off for the
+    /// chaff tags.
+    fn frame(&self, tree: &Tree, dir: NodeId, rel: &[u8], tag: ChaffTag, track: bool) -> Frame {
         let mut frame = Frame {
             end: tree.node(dir).end,
             path_len: rel.len(),
@@ -377,13 +406,13 @@ impl<'a> Classifier<'a> {
                         frame.attrs = gitattributes::Attrs::parse(rel, &text);
                     }
                 }
-                b".gitignore" if readable(c) && self.gitignore_on() => {
+                b".gitignore" if readable(c) && (self.gitignore_on() || track) => {
                     let path = tree.path(c);
                     if let Ok(text) = crate::io::read_rule_file(&path, RULE_FILE_MAX) {
                         ignore_texts.push((path, text));
                     }
                 }
-                b".git" if self.gitignore_on() && tree.node(c).is_dir() => {
+                b".git" if (self.gitignore_on() || track) && tree.node(c).is_dir() => {
                     let exclude = tree
                         .children(c)
                         .find(|&i| tree.name(i) == b"info")

@@ -1,8 +1,9 @@
 //! Rows to lines: cells, the column fit, name cuts, and glyphs.
 //!
 //! One row gives exactly one line. Layout never wraps; it cuts. When the
-//! width is short, columns drop out in the PRD §5.3 order (preview, age,
-//! type-mix detail), then type, permissions, count, and flags. Size stays.
+//! width is short, columns drop out in the PRD §5.3 order (preview, git,
+//! age, type-mix detail), then type, permissions, count, and flags. Size
+//! stays.
 
 use std::fmt::Write as _;
 
@@ -33,6 +34,8 @@ pub struct Glyphs {
     pub mount: &'static str,
     pub approx: &'static str,
     pub warn: &'static str,
+    pub ahead: &'static str,
+    pub behind: &'static str,
 }
 
 pub static UNICODE: Glyphs = Glyphs {
@@ -51,6 +54,8 @@ pub static UNICODE: Glyphs = Glyphs {
     mount: "⊞",
     approx: "≈",
     warn: "⚠",
+    ahead: "↑",
+    behind: "↓",
 };
 
 pub static ASCII: Glyphs = Glyphs {
@@ -69,6 +74,8 @@ pub static ASCII: Glyphs = Glyphs {
     mount: "[mnt]",
     approx: "~",
     warn: "!",
+    ahead: "^",
+    behind: "v",
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +167,7 @@ struct Cells {
     age: String,
     perms: String,
     flags: Vec<Span>,
+    git: String,
     preview: String,
 }
 
@@ -236,6 +244,7 @@ struct ColumnPlan {
     age: Option<usize>,
     perms: Option<usize>,
     flags: Option<usize>,
+    git: Option<usize>,
     preview: Option<usize>,
 }
 
@@ -435,13 +444,50 @@ impl Cx<'_> {
             });
         }
         let size: u64 = tree.nodes.iter().map(|n| n.size).sum();
-        spans.push(plain(format!(
+        let mut text = format!(
             "  {}{}{}",
             self.size(size),
             g.sep,
             files_text(tree.file_count(ROOT))
-        )));
+        );
+        if !self.scan.kinds.is_empty() {
+            let _ = write!(text, "{}{}", g.sep, self.scan.kinds.join(" + "));
+        }
+        if let Some(head) = &self.scan.git_head {
+            let _ = write!(text, "{}git {}", g.sep, head.branch);
+            if head.ahead > 0 {
+                let _ = write!(text, " {}{}", g.ahead, head.ahead);
+            }
+            if head.behind > 0 {
+                let _ = write!(text, " {}{}", g.behind, head.behind);
+            }
+        }
+        if let Some(git) = &self.scan.git {
+            let changed = git.changed(tree);
+            if changed > 0 {
+                let _ = write!(text, "{}{} changed", g.sep, thousands(changed));
+            }
+        }
+        spans.push(plain(text));
         spans
+    }
+
+    /// The git cell: the status letter of a file, `M<n>` for a directory
+    /// with changed files below it.
+    fn git_cell(&self, node: NodeId) -> String {
+        let Some(git) = &self.scan.git else {
+            return String::new();
+        };
+        let tree = self.tree();
+        if tree.node(node).is_dir() {
+            match git.changed_below(tree, node) {
+                0 => String::new(),
+                n => format!("M{n}"),
+            }
+        } else {
+            git.of(node)
+                .map_or(String::new(), |c| c.letter().to_string())
+        }
     }
 
     fn node_cells(&self, prefix: String, node: NodeId, joined: &[NodeId], open: bool) -> Cells {
@@ -479,6 +525,7 @@ impl Cx<'_> {
             }),
             perms: perms(n.kind, n.mode),
             flags: self.flags(tail),
+            git: self.git_cell(tail),
             ..Cells::default()
         };
         if n.is_dir() {
@@ -892,6 +939,7 @@ impl Cx<'_> {
         let age = max(&|c| c.age.width());
         let perms = max(&|c| c.perms.width());
         let flags = max(&|c| c.flags.iter().map(|s| s.text.width()).sum());
+        let git = max(&|c| c.git.width());
         let preview = max(&|c| c.preview.width());
         let some = |w: usize| (w > 0).then_some(w);
         let mut plan = ColumnPlan {
@@ -902,6 +950,7 @@ impl Cx<'_> {
             age: some(age),
             perms: some(perms),
             flags: some(flags),
+            git: some(git),
             preview: some(preview),
         };
         let width = self.opts.width;
@@ -913,6 +962,7 @@ impl Cx<'_> {
                     p.age,
                     p.perms,
                     p.flags,
+                    p.git,
                     p.preview,
                 ]
                 .iter()
@@ -922,8 +972,9 @@ impl Cx<'_> {
         };
         let min_name = name_nat.min(MIN_NAME);
         type Drop = fn(&mut ColumnPlan, usize);
-        let steps: [Drop; 7] = [
+        let steps: [Drop; 8] = [
             |p, _| p.preview = None,
+            |p, _| p.git = None,
             |p, _| p.age = None,
             |p, short| p.ty = p.ty.map(|_| (short, false)).filter(|t| t.0 > 0),
             |p, _| p.ty = None,
@@ -1000,6 +1051,9 @@ impl Cx<'_> {
             let fw: usize = c.flags.iter().map(|s| s.text.width()).sum();
             spans.extend(c.flags);
             tail.push_str(&" ".repeat(w.saturating_sub(fw)));
+        }
+        if let Some(w) = plan.git {
+            cell(&mut spans, &mut tail, &c.git, w, false, Paint::Plain);
         }
         if plan.preview.is_some() && !c.preview.is_empty() {
             cell(&mut spans, &mut tail, &c.preview, 0, false, Paint::Plain);

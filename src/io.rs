@@ -23,6 +23,50 @@ pub fn read_head(path: &Path, max: usize) -> io::Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// Reads at most `len` bytes of `path` from `offset`.
+///
+/// The caller makes sure that `path` is a regular file and not on a pseudo
+/// file system.
+pub fn read_at(path: &Path, offset: u64, len: usize) -> io::Result<Vec<u8>> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = File::open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut buf = Vec::new();
+    file.take(len as u64).read_to_end(&mut buf)?;
+    #[cfg(feature = "test-hooks")]
+    {
+        hooks::count_read(path, buf.len() as u64);
+        hooks::delay();
+    }
+    Ok(buf)
+}
+
+/// Feeds all bytes of `path` to `f`, in blocks of 64 KiB.
+///
+/// The caller makes sure that `path` is a regular file and not on a pseudo
+/// file system.
+pub fn read_each(path: &Path, mut f: impl FnMut(&[u8])) -> io::Result<u64> {
+    let mut file = File::open(path)?;
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut total = 0u64;
+    loop {
+        let n = match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        f(&buf[..n]);
+        total += n as u64;
+    }
+    #[cfg(feature = "test-hooks")]
+    {
+        hooks::count_read(path, total);
+        hooks::delay();
+    }
+    Ok(total)
+}
+
 /// Reads a rule file (`.gitignore`, `.gitattributes`) of at most `max`
 /// bytes. Rule files steer the walk; they are not content, so the hooks do
 /// not count them (FR-52 counts content reads only).

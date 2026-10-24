@@ -9,7 +9,9 @@ pub mod chaff;
 pub mod cli;
 pub mod detect;
 pub mod fnv;
+pub mod git;
 pub mod io;
+pub mod kind;
 pub mod layout;
 pub mod render;
 pub mod salience;
@@ -166,6 +168,11 @@ pub struct Scan {
     pub view: View,
     /// Template labels by `ChaffTag::label` - 1, for `LICENSE (MIT)`.
     pub template_labels: Vec<String>,
+    /// The project kinds of the root (FR-59).
+    pub kinds: Vec<&'static str>,
+    /// Git status, when the root is in a repo and `--no-git` is off.
+    pub git: Option<git::GitStatus>,
+    pub git_head: Option<git::GitHead>,
 }
 
 impl Scan {
@@ -286,10 +293,11 @@ pub fn build(
             scan_time,
         )?
     };
+    let repo = if opts.no_git { None } else { git::open(root) };
     let classifier = chaff::Classifier::new(&tree, &opts.chaff, &cx.templates);
-    let mut tags = {
+    let (mut tags, ignored) = {
         let _t = timer("chaff");
-        classifier.classify_names(&tree)
+        classifier.classify_names_and_ignored(&tree, repo.is_some())
     };
     let mut aggs = {
         let _t = timer("aggregate");
@@ -301,6 +309,14 @@ pub fn build(
         .enumerate()
         .map(|(i, n)| detect::name_label(n, tree.name(i as NodeId)))
         .collect();
+    let (git, git_head) = match &repo {
+        Some(repo) => {
+            let _t = timer("git");
+            let status = repo.status(&tree, |id| ignored[id as usize]);
+            (Some(status), repo.head())
+        }
+        None => (None, None),
+    };
     if opts.mismatches {
         let found = {
             let _t = timer("detect");
@@ -313,6 +329,7 @@ pub fn build(
         };
         let files: Vec<NodeId> = found.iter().map(|(id, _)| *id).collect();
         let view = select::mismatch_view(&tree, &tags, &files, budget);
+        let kinds = project_kinds(&tree, &labels, opts, git_head.is_some());
         return Ok(Scan {
             tree,
             tags,
@@ -322,6 +339,9 @@ pub fn build(
             types: found.into_iter().collect(),
             view,
             template_labels: cx.templates.labels(),
+            kinds,
+            git,
+            git_head,
         });
     }
     let mut view = {
@@ -331,6 +351,7 @@ pub fn build(
                 tree: &tree,
                 aggs: &aggs,
                 tags: &tags,
+                git: git.as_ref(),
             },
             &salience::Weights::default(),
         );
@@ -414,6 +435,7 @@ pub fn build(
         }
         select::apply_content(&mut view, &tree, &aggs, &tags, &moved);
     }
+    let kinds = project_kinds(&tree, &labels, opts, git_head.is_some());
     Ok(Scan {
         tree,
         tags,
@@ -423,7 +445,34 @@ pub fn build(
         types: detected.types,
         view,
         template_labels: cx.templates.labels(),
+        kinds,
+        git,
+        git_head,
     })
+}
+
+/// The project kinds of the root. The EXIF check reads image heads, so it
+/// needs content reads (not with `--detect off`). `git repo` shows only
+/// when teak could not read the git state: with it, the header shows the
+/// branch; with `--no-git`, the header has no git data (FR-57).
+fn project_kinds(
+    tree: &Tree,
+    labels: &[LabelId],
+    opts: &Opts,
+    git_shown: bool,
+) -> Vec<&'static str> {
+    let reads = opts.detect != detect::DetectMode::Off;
+    let mut kinds = kind::detect(tree, tree::ROOT, labels, |id| {
+        let n = tree.node(id);
+        reads
+            && n.kind == tree::Kind::File
+            && !n.has(flag::PSEUDO_FS)
+            && io::read_head(&tree.path(id), 4096).is_ok_and(|h| kind::head_has_exif(&h))
+    });
+    if git_shown || opts.no_git {
+        kinds.retain(|k| *k != "git repo");
+    }
+    kinds
 }
 
 /// The layout options for a run.

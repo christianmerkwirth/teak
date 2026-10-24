@@ -2,7 +2,7 @@
 source: tests/display.rs
 expression: "view(&fx, \"rustrepo\", &[])"
 ---
-rustrepo/  12M · 12 files
+rustrepo/  12M · 12 files · rust crate + git repo
 ├── ▪ chaff  target/ 12M 2 · .gitignore · Cargo.lock
 ├── src/             95  4  rust      1h
 │   ├── cli/         31  2  rust      2d

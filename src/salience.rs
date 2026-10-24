@@ -1,13 +1,14 @@
 //! Salience: how much a row tells the user, from 0 to 1 (PRD §9.2).
 //!
-//! Only stat data, names, and chaff tags go in: content detection runs
-//! after selection.
+//! Only stat data, names, chaff tags, and git status go in: content
+//! detection runs after selection.
 
 use std::collections::HashMap;
 
 use crate::aggregate::Aggs;
 use crate::chaff::{Action, ChaffClass, ChaffTag};
 use crate::detect::ext::ext_of;
+use crate::git::{Code, GitStatus};
 use crate::tree::{Kind, NodeId, ROOT, Tree, flag};
 
 /// Term weights. P4 makes them config keys (FR-67).
@@ -42,6 +43,7 @@ pub struct ScoreInputs<'a> {
     /// Totals without hidden entries.
     pub aggs: &'a Aggs,
     pub tags: &'a [ChaffTag],
+    pub git: Option<&'a GitStatus>,
 }
 
 /// The term values of one node, each in `[0, 1]`.
@@ -131,13 +133,34 @@ impl Context {
         Terms {
             size,
             recency,
-            git: 0.0,
+            git: git_term(inp, id),
             rarity,
             role: role(tree.name(id), node.kind),
             anomaly: anomaly(tree, id, self.total),
             factor,
         }
     }
+}
+
+/// 1 for a modified, added, or untracked file. A directory scores by the
+/// share of its files that changed: 0.5 for one, up to 1 for all.
+fn git_term(inp: &ScoreInputs, id: NodeId) -> f32 {
+    let Some(git) = inp.git else {
+        return 0.0;
+    };
+    let tree = inp.tree;
+    if !tree.node(id).is_dir() {
+        return match git.of(id) {
+            Some(Code::Ignored) | None => 0.0,
+            Some(_) => 1.0,
+        };
+    }
+    let changed = git.changed_below(tree, id);
+    if changed == 0 {
+        return 0.0;
+    }
+    let files = inp.aggs.get(tree, id).files.max(changed);
+    0.5 + 0.5 * (changed as f32 / files as f32)
 }
 
 /// Rarity of each file among its sibling files: `1 - share of its

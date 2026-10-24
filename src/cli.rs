@@ -242,6 +242,10 @@ struct Cli {
     #[arg(long, help_heading = "Output")]
     si: bool,
 
+    /// No git status
+    #[arg(long = "no-git", help_heading = "Output")]
+    no_git: bool,
+
     /// Walk threads
     #[arg(short = 'j', long = "threads", value_name = "N",
           value_parser = clap::value_parser!(u64).range(1..), help_heading = "Help")]
@@ -278,6 +282,8 @@ pub struct Opts {
     pub width: Option<usize>,
     pub time: TimeMode,
     pub units: SizeUnits,
+    /// `--no-git`: no git status, column, or header part.
+    pub no_git: bool,
     pub threads: Option<usize>,
 }
 
@@ -381,6 +387,7 @@ where
         } else {
             SizeUnits::Iec
         },
+        no_git: cli.no_git,
         threads: cli.threads.map(|t| t as usize),
     };
     Ok(Parsed::Run(opts))

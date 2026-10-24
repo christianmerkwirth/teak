@@ -2,7 +2,7 @@
 source: tests/display.rs
 expression: "view(&fx, \"noderepo\", &[])"
 ---
-noderepo/  553K · 226 files
+noderepo/  553K · 226 files · node pkg
 ├── ▪ chaff  node_modules/ 553K 220 · dist/ · package-lock.json
 ├── src/          45  2  typescript  1w
 │   ├── app.tsx   25     typescript  1w

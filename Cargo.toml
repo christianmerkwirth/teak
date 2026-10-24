@@ -18,6 +18,9 @@ test-hooks = ["dep:serde_json"]
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
+# Git status in process: the index, refs, and a rev-walk only. No
+# attributes, filters, or commands, so no program can run (FR-76).
+gix = { version = "0.90.0", default-features = false, features = ["index", "revision", "sha1"] }
 globset = "0.4.20"
 ignore = "0.4"
 infer = "0.22.0"

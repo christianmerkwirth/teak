@@ -121,3 +121,24 @@ fn fr57_a_subdirectory_of_a_repo() {
     assert!(cells(out.must_row("a.rs")).contains(&"M"), "{}", out.stdout);
     assert!(out.header().contains("git main ↑2"), "{}", out.header());
 }
+
+#[test]
+fn fr57_ignored_chaff_is_not_untracked() {
+    // `target/` is `build` chaff by the Rust rule pack, and gitignored.
+    let fx = Fixture::new();
+    fx.file("Cargo.toml", "[package]\n")
+        .file(".gitignore", "/target\n")
+        .file("src/main.rs", "fn main() {}\n");
+    git_init_commit(&fx);
+    for i in 0..5 {
+        fx.file(&format!("target/debug/f{i}"), "bin");
+    }
+    for args in [&[][..], &["-a"], &["--no-gitignore"]] {
+        let out = run(&fx, args);
+        assert!(
+            !out.header().contains("changed"),
+            "{args:?}: {}",
+            out.header()
+        );
+    }
+}
