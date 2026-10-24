@@ -89,7 +89,7 @@ pub fn plan(inp: &SelectInputs, budget: usize, opts: &SelectOpts) -> View {
             },
         });
     }
-    let footer = p.footer(&rows, budget);
+    let footer = footer(inp.tree, inp.tags, &rows, budget);
     rows.push(footer);
     debug_assert!(rows.len() <= budget, "{} rows for {budget}", rows.len());
     View { rows, budget }
@@ -612,36 +612,68 @@ impl Planner<'_> {
             },
         }
     }
+}
 
-    fn footer(&self, rows: &[Row], budget: usize) -> Row {
-        let tree = self.inp.tree;
-        let mut folded: BTreeMap<&'static str, u64> = BTreeMap::new();
-        for row in rows {
-            if let RowKind::Chaff { items, .. } = &row.kind {
-                for item in items {
-                    let tag = &self.inp.tags[item.node as usize];
-                    *folded.entry(tag.group_name()).or_default() += item.files;
-                }
+/// The footer for `rows` (the header and the rows before the footer): the
+/// lines used, the files, and the folded and hidden counts by class.
+pub fn footer(tree: &Tree, tags: &[ChaffTag], rows: &[Row], budget: usize) -> Row {
+    let mut folded: BTreeMap<&'static str, u64> = BTreeMap::new();
+    for row in rows {
+        if let RowKind::Chaff { items, .. } = &row.kind {
+            for item in items {
+                let tag = &tags[item.node as usize];
+                *folded.entry(tag.group_name()).or_default() += item.files;
             }
-        }
-        let mut hidden: BTreeMap<&'static str, u64> = BTreeMap::new();
-        for (id, tag) in self.inp.tags.iter().enumerate() {
-            if tag.action == Action::Hide && tag.source != Source::Inherited {
-                *hidden.entry(tag.group_name()).or_default() += tree.file_count(id as NodeId);
-            }
-        }
-        Row {
-            depth: 0,
-            last: false,
-            kind: RowKind::Footer {
-                used: rows.len() + 1,
-                budget,
-                total_files: tree.file_count(ROOT),
-                folded: sorted_counts(folded),
-                hidden: sorted_counts(hidden),
-            },
         }
     }
+    let mut hidden: BTreeMap<&'static str, u64> = BTreeMap::new();
+    for (id, tag) in tags.iter().enumerate() {
+        if tag.action == Action::Hide && tag.source != Source::Inherited {
+            *hidden.entry(tag.group_name()).or_default() += tree.file_count(id as NodeId);
+        }
+    }
+    Row {
+        depth: 0,
+        last: false,
+        kind: RowKind::Footer {
+            used: rows.len() + 1,
+            budget,
+            total_files: tree.file_count(ROOT),
+            folded: sorted_counts(folded),
+            hidden: sorted_counts(hidden),
+        },
+    }
+}
+
+/// The `--mismatches` view: the header, one row per mismatched file (in the
+/// given order) while the budget lasts, then `… N more`, then the footer.
+/// With no mismatches, one `no mismatches` row.
+pub fn mismatch_view(tree: &Tree, tags: &[ChaffTag], files: &[NodeId], budget: usize) -> View {
+    let row = |kind| Row {
+        depth: 0,
+        last: false,
+        kind,
+    };
+    let mut rows = vec![row(RowKind::Header)];
+    let room = budget.saturating_sub(2);
+    if files.is_empty() {
+        rows.push(row(RowKind::Note("no mismatches")));
+    } else if files.len() <= room {
+        rows.extend(files.iter().map(|&node| row(RowKind::Mismatch { node })));
+    } else {
+        let shown = room.saturating_sub(1);
+        rows.extend(
+            files[..shown]
+                .iter()
+                .map(|&node| row(RowKind::Mismatch { node })),
+        );
+        rows.push(row(RowKind::More {
+            count: (files.len() - shown) as u64,
+        }));
+    }
+    let footer = footer(tree, tags, &rows, budget);
+    rows.push(footer);
+    View { rows, budget }
 }
 
 /// High counts first, then by name; empty groups are left out.

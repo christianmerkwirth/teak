@@ -5,6 +5,7 @@
 
 pub mod ext;
 pub mod magic;
+pub mod magika;
 pub mod names;
 pub mod secret;
 
@@ -66,7 +67,8 @@ pub mod fast {
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use crate::tree::{Kind, Node};
+use crate::tree::{Kind, Node, NodeId, Tree};
+use crate::view::{RowKind, View};
 
 /// An index into [`LABELS`].
 pub type LabelId = u16;
@@ -233,6 +235,113 @@ labels! {
     "pickle" Binary "application/x-pickle" false,
     "onnx" Binary "application/x-onnx" false,
     "pem" Text "application/x-pem-file" true,
+    // The other Magika labels. New labels go at the end, so the ids in the
+    // type cache stay valid.
+    "3gp" Av "video/3gpp" false,
+    "ace" Archive "application/x-ace-compressed" false,
+    "ai" Text "application/pdf" false,
+    "aidl" Unknown "text/plain" true,
+    "apk" Exec "application/vnd.android.package-archive" false,
+    "applebplist" Binary "application/x-bplist" false,
+    "appleplist" Data "application/x-plist" true,
+    "asp" Code "text/html" true,
+    "autohotkey" Code "text/plain" true,
+    "autoit" Code "text/plain" true,
+    "bazel" Code "text/plain" true,
+    "bib" Text "text/x-bibtex" true,
+    "cab" Archive "application/vnd.ms-cab-compressed" false,
+    "cat" Binary "application/octet-stream" false,
+    "chm" Binary "application/chm" false,
+    "cobol" Code "text/x-cobol" true,
+    "coff" Exec "application/x-coff" false,
+    "coffeescript" Code "text/coffeescript" true,
+    "crt" Text "application/x-x509-ca-cert" false,
+    "crx" Exec "application/x-chrome-extension" false,
+    "csproj" Code "text/plain" true,
+    "dex" Exec "application/x-android-dex" false,
+    "dicom" Image "application/dicom" false,
+    "diff" Text "text/plain" true,
+    "dm" Code "text/plain" true,
+    "dsstore" Unknown "application/octet-stream" false,
+    "dwg" Image "image/x-dwg" false,
+    "dxf" Image "image/vnd.dxf" true,
+    "emf" Binary "application/octet-stream" false,
+    "eml" Text "message/rfc822" true,
+    "erb" Code "text/x-ruby" true,
+    "flv" Av "video/x-flv" false,
+    "fortran" Text "text/x-fortran" true,
+    "gitattributes" Code "text/plain" true,
+    "gitmodules" Code "text/plain" true,
+    "h5" Archive "application/x-hdf5" false,
+    "handlebars" Code "text/x-handlebars-template" true,
+    "hcl" Code "text/x-hcl" true,
+    "hlp" Binary "application/winhlp" false,
+    "htaccess" Code "text/x-apache-conf" true,
+    "icns" Image "image/x-icns" false,
+    "ics" Data "text/calendar" true,
+    "ignorefile" Code "text/plain" true,
+    "internetshortcut" Data "application/x-mswinurl" true,
+    "ipynb" Code "application/json" true,
+    "jinja" Code "text/x-jinja2-template" true,
+    "jp2" Image "image/jpeg2000" false,
+    "lha" Archive "application/x-lha" false,
+    "lnk" Binary "application/x-ms-shortcut" false,
+    "m3u" Data "text/plain" true,
+    "m4" Code "text/plain" true,
+    "matlab" Code "text/x-matlab" true,
+    "mht" Code "application/x-mimearchive" true,
+    "midi" Av "audio/midi" false,
+    "mscompress" Archive "application/x-ms-compress-szdd" false,
+    "msi" Archive "application/x-msi" false,
+    "mum" Data "text/xml" true,
+    "npz" Archive "application/octet-stream" false,
+    "nupkg" Unknown "application/octet-stream" false,
+    "odp" Text "application/vnd.oasis.opendocument.presentation" false,
+    "ods" Text "application/vnd.oasis.opendocument.spreadsheet" false,
+    "odt" Text "application/vnd.oasis.opendocument.text" false,
+    "one" Text "application/msonenote" false,
+    "outlook" Binary "application/vnd.ms-outlook" false,
+    "pascal" Code "text/x-pascal" true,
+    "pcap" Binary "application/vnd.tcpdump.pcap" false,
+    "pdb" Binary "application/octet-stream" false,
+    "po" Data "text/gettext-translation" true,
+    "postscript" Text "application/postscript" false,
+    "ppt" Text "application/vnd.ms-powerpoint" false,
+    "prolog" Code "text/x-prolog" true,
+    "proteindb" Data "application/octet-stream" true,
+    "pytorch" Binary "application/octet-stream" false,
+    "randombytes" Unknown "application/octet-stream" false,
+    "randomtxt" Text "text/plain" true,
+    "rdf" Text "application/rdf+xml" true,
+    "sgml" Text "application/sgml" true,
+    "smali" Code "application/x-smali" true,
+    "snap" Archive "application/octet-stream" false,
+    "solidity" Code "text/plain" true,
+    "squashfs" Archive "application/octet-stream" false,
+    "srt" Data "text/srt" true,
+    "stlbinary" Image "application/sla" false,
+    "stltext" Image "application/sla" true,
+    "sum" Data "text/plain" true,
+    "swf" Exec "application/x-shockwave-flash" false,
+    "tcl" Code "application/x-tcl" true,
+    "textproto" Code "text/plain" true,
+    "tga" Image "image/x-tga" false,
+    "thumbsdb" Binary "image/vnd.ms-thumb" false,
+    "torrent" Binary "application/x-bittorrent" false,
+    "twig" Code "text/x-twig" true,
+    "vba" Code "text/vbscript" true,
+    "vcxproj" Code "application/xml" true,
+    "verilog" Code "text/x-verilog" true,
+    "vhdl" Code "text/x-vhdl" true,
+    "vtt" Text "text/vtt" true,
+    "winregistry" Data "text/x-ms-regedit" true,
+    "wmf" Image "image/wmf" false,
+    "xar" Archive "application/x-xar" false,
+    "xls" Text "application/vnd.ms-excel" false,
+    "xlsb" Text "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" false,
+    "xpi" Archive "application/zip" false,
+    "yara" Code "text/x-yara" true,
+    "zlibstream" Binary "application/zlib" false,
 }
 
 /// The label for an id.
@@ -242,6 +351,11 @@ pub fn label(id: LabelId) -> &'static Label {
 
 /// The id of a label name. Panics on a name that is not in [`LABELS`].
 pub fn label_id(name: &str) -> LabelId {
+    find_label(name).unwrap_or_else(|| panic!("unknown label {name}"))
+}
+
+/// The id of a label name, if it is in [`LABELS`].
+pub fn find_label(name: &str) -> Option<LabelId> {
     static INDEX: OnceLock<HashMap<&'static str, LabelId>> = OnceLock::new();
     let index = INDEX.get_or_init(|| {
         LABELS
@@ -250,9 +364,7 @@ pub fn label_id(name: &str) -> LabelId {
             .map(|(i, l)| (l.name, i as LabelId))
             .collect()
     });
-    *index
-        .get(name)
-        .unwrap_or_else(|| panic!("unknown label {name}"))
+    index.get(name).copied()
 }
 
 /// Where a type came from.
@@ -336,9 +448,50 @@ pub fn name_label(node: &Node, name: &[u8]) -> LabelId {
         .unwrap_or_else(|| label_id("unknown"))
 }
 
-/// The label the extension says when it does not match the content label.
-pub fn mismatch(_content: LabelId, _score: f32, _name: &[u8]) -> Option<LabelId> {
-    None
+/// The lowest Magika score that can win over the extension or give `⚠`.
+pub const SURE: f32 = 0.90;
+
+/// The label the extension says, when it does not match the content label
+/// (FR-53): the score is [`SURE`] or more, the extension maps to a known
+/// label, and the two labels are not the same type.
+pub fn mismatch(content: LabelId, score: f32, name: &[u8]) -> Option<LabelId> {
+    if score < SURE || matches!(label(content).name, "unknown" | "empty") {
+        return None;
+    }
+    let by_ext = ext::by_name(name)?;
+    (!same_type(by_ext, content)).then_some(by_ext)
+}
+
+/// Labels that do not conflict: equal names, an extension and a content
+/// type of one family (a `.jar` is a zip, JSON is YAML), or plain text and
+/// any text type.
+pub fn same_type(by_ext: LabelId, content: LabelId) -> bool {
+    const FAMILIES: &[(&str, &str)] = &[
+        ("jar", "zip"),
+        ("epub", "zip"),
+        ("docx", "zip"),
+        ("xlsx", "zip"),
+        ("pptx", "zip"),
+        ("object", "elf"),
+        ("object", "coff"),
+        ("svg", "xml"),
+        ("html", "xml"),
+        ("javascript", "typescript"),
+        ("typescript", "javascript"),
+        ("c", "cpp"),
+        ("cpp", "c"),
+        ("json", "jsonl"),
+        ("jsonl", "json"),
+        ("yaml", "json"),
+        ("ini", "toml"),
+        ("toml", "ini"),
+        ("pem", "crt"),
+    ];
+    let (e, c) = (label(by_ext), label(content));
+    if e.name == c.name || FAMILIES.contains(&(e.name, c.name)) {
+        return true;
+    }
+    (e.name == "txt" && c.text) || (c.name == "txt" && e.text)
 }
 
 /// The head size for fast detection.
@@ -347,18 +500,117 @@ pub const HEAD_MAX: usize = 4096;
 /// Series up to this size get every member typed; larger ones a sample.
 pub const SERIES_ALL: usize = 64;
 
-/// Types the files of the visible rows, and marks secrets. Content comes
-/// only from `io::read_head`, never with `--detect off`, for non-regular
+/// One typed file.
+#[derive(Clone, Copy, Debug)]
+pub struct Typed {
+    pub info: TypeInfo,
+    /// Detection read the content of this file.
+    pub read: bool,
+    /// A secret by name, or a private-key header in the content.
+    pub secret: bool,
+}
+
+/// Types files: stat → names → (Magika | magic bytes) → extension. Content
+/// comes only through `io`, never with `--detect off`, for non-regular
 /// files, or on a pseudo file system.
-pub fn run(
-    view: &crate::view::View,
-    tree: &mut crate::tree::Tree,
-    _labels: &[LabelId],
-    mode: DetectMode,
-) -> HashMap<crate::tree::NodeId, TypeInfo> {
-    use crate::tree::flag;
-    use crate::view::RowKind;
-    let mut ids: Vec<crate::tree::NodeId> = Vec::new();
+pub struct Detector {
+    pub mode: DetectMode,
+    model: magika::Model,
+}
+
+impl Detector {
+    pub fn new(mode: DetectMode) -> Detector {
+        Detector {
+            mode,
+            model: magika::Model::new(),
+        }
+    }
+
+    /// Types one file. `use_model` lets Magika run (with `--detect full`).
+    pub fn type_file(&mut self, tree: &Tree, id: NodeId, use_model: bool) -> Typed {
+        let node = *tree.node(id);
+        let done = |info: TypeInfo| Typed {
+            info,
+            read: false,
+            secret: false,
+        };
+        if let Some(l) = stat_label(&node) {
+            return done(TypeInfo::new(l, Source::Stat));
+        }
+        let name = tree.name(id);
+        if node.size == 0 {
+            return Typed {
+                secret: secret::is_secret(name, None),
+                ..done(TypeInfo::new(label_id("empty"), Source::Stat))
+            };
+        }
+        let readable = self.mode != DetectMode::Off
+            && node.kind == Kind::File
+            && !node.has(crate::tree::flag::PSEUDO_FS);
+        if !readable {
+            return Typed {
+                secret: secret::is_secret(name, None),
+                ..done(fast_only(name, None))
+            };
+        }
+        let path = tree.path(id);
+        // Exact names need no model; the head read still feeds the secret check.
+        if use_model
+            && self.mode == DetectMode::Full
+            && names::by_name(name).is_none()
+            && let Some(m) = self.model.identify(&path)
+        {
+            let by_ext = ext::by_name(name);
+            // Magic bytes that agree with the extension on a binary format
+            // win over the model: two signals against one.
+            let agreed = magic::by_magic(&m.head)
+                .filter(|&(l, text)| !text && by_ext.is_some_and(|e| same_type(e, l)));
+            let info = if let Some((l, _)) = agreed {
+                TypeInfo::new(l, Source::Magic)
+            } else if m.generic {
+                fast_only(name, Some(&m.head))
+            } else {
+                from_model(name, m.label, m.score)
+            };
+            return Typed {
+                info,
+                read: true,
+                secret: secret::is_secret(name, Some(&m.head)),
+            };
+        }
+        let head = crate::io::read_head(&path, HEAD_MAX).ok();
+        Typed {
+            info: fast_only(name, head.as_deref()),
+            read: head.is_some(),
+            secret: secret::is_secret(name, head.as_deref()),
+        }
+    }
+}
+
+/// The fast path, with no `⚠`: only a sure Magika label gives one (FR-53).
+fn fast_only(name: &[u8], head: Option<&[u8]>) -> TypeInfo {
+    TypeInfo {
+        mismatch: None,
+        ..fast::type_of(name, head)
+    }
+}
+
+/// A Magika label. An unsure label loses to the extension.
+fn from_model(name: &[u8], content: LabelId, score: f32) -> TypeInfo {
+    let mut t = match ext::by_name(name) {
+        Some(by_ext) if score < SURE => TypeInfo::new(by_ext, Source::Ext),
+        _ => TypeInfo::new(content, Source::Magika),
+    };
+    t.score = score;
+    if t.source == Source::Magika {
+        t.mismatch = mismatch(content, score, name);
+    }
+    t
+}
+
+/// Types the files of the visible rows, and marks secrets.
+pub fn run(view: &View, tree: &mut Tree, det: &mut Detector) -> HashMap<NodeId, TypeInfo> {
+    let mut ids: Vec<NodeId> = Vec::new();
     for row in &view.rows {
         match &row.kind {
             RowKind::Entry { node, .. } if !tree.node(*node).is_dir() => ids.push(*node),
@@ -376,30 +628,42 @@ pub fn run(
     }
     let mut out = HashMap::new();
     for id in ids {
-        let node = *tree.node(id);
-        let name = tree.name(id).to_vec();
-        if let Some(l) = stat_label(&node) {
-            out.insert(id, TypeInfo::new(l, Source::Stat));
+        let t = det.type_file(tree, id, true);
+        if t.secret {
+            tree.nodes[id as usize].flags |= crate::tree::flag::SECRET;
+        }
+        out.insert(id, t.info);
+    }
+    out
+}
+
+/// `--mismatches`: types every regular file that is not hidden, and gives
+/// the mismatched ones in path order.
+pub fn mismatched(
+    tree: &mut Tree,
+    hidden: impl Fn(NodeId) -> bool,
+    det: &mut Detector,
+) -> Vec<(NodeId, TypeInfo)> {
+    let mut out = Vec::new();
+    let mut id: NodeId = 0;
+    while (id as usize) < tree.len() {
+        if hidden(id) {
+            id = tree.node(id).end;
             continue;
         }
-        let readable = mode != DetectMode::Off
-            && node.kind == Kind::File
-            && node.size > 0
-            && !node.has(flag::PSEUDO_FS);
-        let head = if readable {
-            crate::io::read_head(&tree.path(id), HEAD_MAX).ok()
-        } else {
-            None
-        };
-        let info = if node.size == 0 {
-            TypeInfo::new(label_id("empty"), Source::Stat)
-        } else {
-            fast::type_of(&name, head.as_deref())
-        };
-        if secret::is_secret(&name, head.as_deref()) {
-            tree.nodes[id as usize].flags |= flag::SECRET;
+        if tree.node(id).kind == Kind::File {
+            let t = det.type_file(tree, id, true);
+            if t.secret {
+                tree.nodes[id as usize].flags |= crate::tree::flag::SECRET;
+            }
+            if t.info.mismatch.is_some() {
+                out.push((id, t.info));
+            }
         }
-        out.insert(id, info);
+        id += 1;
     }
+    // Pre-order ids sort by name bytes per directory; a full path sort puts
+    // `a/b` before `a.c`, as `sort` does.
+    out.sort_by_cached_key(|(id, _)| tree.rel_path(*id));
     out
 }

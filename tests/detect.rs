@@ -4,11 +4,12 @@
 
 mod support;
 
-use teak::detect::{self, Source, label, label_id};
+use teak::detect::{self, Source, label_id};
 
-use support::{Fixture, corpus, corpus_dir, node, run, scan};
+use support::{Fixture, corpus, node, run, scan};
 
 /// The type cell of a file row: name, size, type, age.
+#[cfg_attr(not(any(feature = "magika", feature = "test-hooks")), allow(dead_code))]
 fn type_cell(out: &support::Run, name: &str) -> String {
     out.cells(name)[2].to_string()
 }
@@ -193,6 +194,8 @@ fn fr55_full_acts_as_fast_without_magika() {
 #[cfg(feature = "magika")]
 #[test]
 fn corpus_files_get_their_expected_labels() {
+    use support::corpus_dir;
+    use teak::detect::label;
     let s = scan(&corpus_dir(), &[]);
     let manifest = std::fs::read_to_string(corpus_dir().join("EXPECTED.tsv")).unwrap();
     let mut wrong = Vec::new();

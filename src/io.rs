@@ -40,11 +40,13 @@ pub fn read_rule_file(path: &Path, max: usize) -> io::Result<Vec<u8>> {
 ///
 /// Magika picks the offsets (the first and the last block of the file); each
 /// `read_at` goes through this gate, so the hooks see the bytes. The read delay
-/// applies once per file, when it opens.
+/// applies once per file, when it opens. The block at offset 0 is kept, so
+/// the secret check needs no second read.
 #[cfg(feature = "magika")]
 pub struct MagikaInput {
     file: File,
     len: u64,
+    head: Vec<u8>,
     #[cfg(feature = "test-hooks")]
     path: std::path::PathBuf,
 }
@@ -59,9 +61,15 @@ impl MagikaInput {
         Ok(MagikaInput {
             file,
             len,
+            head: Vec::new(),
             #[cfg(feature = "test-hooks")]
             path: path.to_path_buf(),
         })
+    }
+
+    /// The bytes that Magika read at offset 0.
+    pub fn into_head(self) -> Vec<u8> {
+        self.head
     }
 }
 
@@ -74,6 +82,9 @@ impl magika::SyncInput for MagikaInput {
     fn read_at(&mut self, buffer: &mut [u8], offset: u64) -> magika::Result<()> {
         use std::os::unix::fs::FileExt;
         self.file.read_exact_at(buffer, offset)?;
+        if offset == 0 && self.head.is_empty() {
+            self.head = buffer.to_vec();
+        }
         #[cfg(feature = "test-hooks")]
         hooks::count_read(&self.path, buffer.len() as u64);
         Ok(())

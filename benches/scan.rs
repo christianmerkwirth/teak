@@ -25,7 +25,8 @@ fn scan_and_layout(root: &Path) -> usize {
     };
     let env = teak::Env::fixed(1_750_000_000);
     let set = teak::settings(&opts, &env);
-    let scan = teak::build(root, &opts, set.budget, env.scan_time).unwrap();
+    let mut cx = teak::Context::new(&opts);
+    let scan = teak::build(root, &opts, &mut cx, set.budget, env.scan_time).unwrap();
     teak::layout::fit(&scan, &teak::layout_opts(&opts, &set)).len()
 }
 

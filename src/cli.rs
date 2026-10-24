@@ -146,6 +146,10 @@ struct Cli {
     )]
     preview: PreviewArg,
 
+    /// List only files whose content does not match the extension
+    #[arg(long, help_heading = "Content")]
+    mismatches: bool,
+
     /// Show hidden entries (dotfiles, .git/), folded into the chaff line
     #[arg(short = 'A', long = "almost-all", help_heading = "Filtering")]
     almost_all: bool,
@@ -242,6 +246,8 @@ pub struct Opts {
     pub series_min: usize,
     pub detect: DetectMode,
     pub preview: PreviewMode,
+    /// `--mismatches`: the list view.
+    pub mismatches: bool,
     pub chaff: ChaffOpts,
     pub one_fs: bool,
     pub follow: bool,
@@ -252,6 +258,16 @@ pub struct Opts {
     pub time: TimeMode,
     pub units: SizeUnits,
     pub threads: Option<usize>,
+}
+
+/// A bad option value that clap cannot check (exit code 2).
+#[derive(Clone, Debug)]
+pub struct UsageError(pub String);
+
+impl std::fmt::Display for UsageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 pub enum Parsed {
@@ -304,9 +320,10 @@ where
         detect: match cli.detect {
             DetectArg::Off => DetectMode::Off,
             DetectArg::Fast => DetectMode::Fast,
-            // Task-3 adds Magika; until then `full` acts as `fast`.
+            // Without the `magika` feature, `full` acts as `fast` (FR-55).
             DetectArg::Full => DetectMode::Full,
         },
+        mismatches: cli.mismatches,
         preview: match cli.preview {
             PreviewArg::Off => PreviewMode::Off,
             PreviewArg::Short => PreviewMode::Short,

@@ -32,6 +32,7 @@ pub struct Glyphs {
     pub link: &'static str,
     pub mount: &'static str,
     pub approx: &'static str,
+    pub warn: &'static str,
 }
 
 pub static UNICODE: Glyphs = Glyphs {
@@ -49,6 +50,7 @@ pub static UNICODE: Glyphs = Glyphs {
     link: "⇢",
     mount: "⊞",
     approx: "≈",
+    warn: "⚠",
 };
 
 pub static ASCII: Glyphs = Glyphs {
@@ -66,6 +68,7 @@ pub static ASCII: Glyphs = Glyphs {
     link: "->",
     mount: "[mnt]",
     approx: "~",
+    warn: "!",
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +155,8 @@ struct Cells {
     count: String,
     ty: String,
     ty_short: String,
+    /// The type cell is a `⚠` mismatch.
+    ty_warn: bool,
     age: String,
     perms: String,
     flags: Vec<Span>,
@@ -271,6 +276,17 @@ impl Cx<'_> {
                 ))],
                 false,
             ),
+            RowKind::Mismatch { node } => {
+                let tree = self.tree();
+                let mut spans = vec![plain(format!("{}  ", escape(&tree.rel_path(*node))))];
+                spans.extend(self.mismatch_spans(*node));
+                Prepared::Free(spans, false)
+            }
+            RowKind::More { count } => Prepared::Free(
+                vec![plain(format!("{} {} more", g.ellipsis, thousands(*count)))],
+                true,
+            ),
+            RowKind::Note(text) => Prepared::Free(vec![plain(*text)], false),
             RowKind::Entry { node, joined, open } => Prepared::Table(
                 Box::new(self.node_cells(prefix, *node, joined, *open)),
                 self.dimmed(*node),
@@ -493,14 +509,40 @@ impl Cx<'_> {
             if info.estimated {
                 ty.push_str(self.opts.glyphs.approx);
             }
-            cells.ty_short = ty.clone();
-            cells.ty = ty;
+            if info.mismatch.is_some() {
+                cells.ty = self
+                    .mismatch_spans(node)
+                    .iter()
+                    .map(|s| s.text.as_str())
+                    .collect();
+                cells.ty_short = format!("{ty} {}", self.opts.glyphs.warn);
+                cells.ty_warn = true;
+            } else {
+                cells.ty_short = ty.clone();
+                cells.ty = ty;
+            }
             cells.age = self.age(n.mtime_ns);
             if n.has(flag::SECRET) && self.opts.preview != PreviewMode::Off {
                 cells.preview = "no preview (secret)".to_string();
             }
         }
         cells
+    }
+
+    /// `html ⚠ ext says pdf` (FR-53).
+    fn mismatch_spans(&self, node: NodeId) -> Vec<Span> {
+        let info = self.scan.type_of(node);
+        let Some(by_ext) = info.mismatch else {
+            return vec![plain(info.name())];
+        };
+        vec![
+            plain(format!("{} ", info.name())),
+            Span {
+                text: self.opts.glyphs.warn.to_string(),
+                paint: Paint::Warn,
+            },
+            plain(format!(" ext says {}", label(by_ext).name)),
+        ]
     }
 
     fn series_cells(&self, prefix: String, series: &Series) -> Cells {
@@ -923,7 +965,8 @@ impl Cx<'_> {
         }
         if let Some((w, full)) = plan.ty {
             let text = if full { &c.ty } else { &c.ty_short };
-            cell(&mut spans, &mut tail, text, w, false, Paint::Plain);
+            let paint = if c.ty_warn { Paint::Warn } else { Paint::Plain };
+            cell(&mut spans, &mut tail, text, w, false, paint);
         }
         if let Some(w) = plan.age {
             cell(&mut spans, &mut tail, &c.age, w, true, Paint::Plain);

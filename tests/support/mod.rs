@@ -451,7 +451,8 @@ pub fn scan(dir: &Path, args: &[&str]) -> teak::Scan {
         teak::cli::Budget::Lines(n) => n,
         teak::cli::Budget::Auto => 100,
     };
-    teak::build(dir, &opts, budget, SCAN_TIME as i64).expect("scan")
+    let mut cx = teak::Context::new(&opts);
+    teak::build(dir, &opts, &mut cx, budget, SCAN_TIME as i64).expect("scan")
 }
 
 /// The node at `rel` (a `/`-joined path below the root).

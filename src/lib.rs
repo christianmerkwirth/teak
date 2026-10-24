@@ -36,7 +36,10 @@ use view::View;
 pub fn version_line() -> String {
     let version = env!("CARGO_PKG_VERSION");
     #[cfg(feature = "magika")]
-    return format!("teak {version} (magika: on, model {})", magika::MODEL_NAME);
+    return format!(
+        "teak {version} (magika: on, model {})",
+        detect::magika::Model::version()
+    );
     #[cfg(not(feature = "magika"))]
     return format!("teak {version} (magika: off)");
 }
@@ -176,8 +179,27 @@ fn timer(_name: &'static str) -> NoTimer {
     NoTimer
 }
 
+/// What all roots of one run share: the detector with its Magika session.
+pub struct Context {
+    pub detector: detect::Detector,
+}
+
+impl Context {
+    pub fn new(opts: &Opts) -> Context {
+        Context {
+            detector: detect::Detector::new(opts.detect),
+        }
+    }
+}
+
 /// Scans one root and builds its view.
-pub fn build(root: &Path, opts: &Opts, budget: usize, scan_time: i64) -> Result<Scan, ScanError> {
+pub fn build(
+    root: &Path,
+    opts: &Opts,
+    cx: &mut Context,
+    budget: usize,
+    scan_time: i64,
+) -> Result<Scan, ScanError> {
     let threads = opts
         .threads
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
@@ -207,6 +229,26 @@ pub fn build(root: &Path, opts: &Opts, budget: usize, scan_time: i64) -> Result<
         .enumerate()
         .map(|(i, n)| detect::name_label(n, tree.name(i as NodeId)))
         .collect();
+    if opts.mismatches {
+        let found = {
+            let _t = timer("detect");
+            detect::mismatched(
+                &mut tree,
+                |id| chaff::is_hidden(&tags, id),
+                &mut cx.detector,
+            )
+        };
+        let files: Vec<NodeId> = found.iter().map(|(id, _)| *id).collect();
+        let view = select::mismatch_view(&tree, &tags, &files, budget);
+        return Ok(Scan {
+            tree,
+            tags,
+            aggs,
+            labels,
+            types: found.into_iter().collect(),
+            view,
+        });
+    }
     let view = {
         let _t = timer("select");
         let scores = salience::score(
@@ -235,7 +277,7 @@ pub fn build(root: &Path, opts: &Opts, budget: usize, scan_time: i64) -> Result<
     };
     let types = {
         let _t = timer("detect");
-        detect::run(&view, &mut tree, &labels, opts.detect)
+        detect::run(&view, &mut tree, &mut cx.detector)
     };
     Ok(Scan {
         tree,
@@ -264,9 +306,10 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
     let set = settings(opts, env);
     let style = Style::new(set.color, env.ls_colors.as_deref());
     let lopts = layout_opts(opts, &set);
+    let mut cx = Context::new(opts);
     let mut code = 0;
     for path in &opts.paths {
-        match build(path, opts, set.budget, env.scan_time) {
+        match build(path, opts, &mut cx, set.budget, env.scan_time) {
             Ok(scan) => {
                 for e in &scan.tree.errors {
                     let _ = writeln!(err, "teak: {e}");

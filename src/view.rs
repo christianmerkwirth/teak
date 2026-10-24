@@ -60,6 +60,16 @@ pub enum RowKind {
         /// The chaff is larger than the rest of the directory.
         first: bool,
     },
+    /// `--mismatches`: one mismatched file.
+    Mismatch {
+        node: NodeId,
+    },
+    /// `--mismatches`: the files that do not fit.
+    More {
+        count: u64,
+    },
+    /// A line of text, for example `no mismatches`.
+    Note(&'static str),
     Footer {
         used: usize,
         budget: usize,
@@ -83,7 +93,11 @@ impl Row {
     /// none: its rows below do.
     pub fn files(&self, tree: &Tree, aggs: &Aggs) -> u64 {
         match &self.kind {
-            RowKind::Header | RowKind::Footer { .. } => 0,
+            RowKind::Header
+            | RowKind::Footer { .. }
+            | RowKind::Mismatch { .. }
+            | RowKind::More { .. }
+            | RowKind::Note(_) => 0,
             RowKind::Entry { node, open, .. } => {
                 if *open || tree.node(*node).is_dir() {
                     0
