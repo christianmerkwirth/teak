@@ -466,7 +466,7 @@ fn fr64_stats_in_json_has_no_rows() {
     assert_valid(&doc);
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn fr64_mismatches_in_json() {
     let fx = Fixture::new();

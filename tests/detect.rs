@@ -9,14 +9,14 @@ use teak::detect::{self, Source, label_id};
 use support::{Fixture, corpus, node, run, scan};
 
 /// The type cell of a file row: name, size, type, age.
-#[cfg_attr(not(any(feature = "magika", feature = "test-hooks")), allow(dead_code))]
+#[cfg_attr(not(any(magika, feature = "test-hooks")), allow(dead_code))]
 fn type_cell(out: &support::Run, name: &str) -> String {
     out.cells(name)[2].to_string()
 }
 
 // FR-49: Magika on visible files
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn fr49_magika_types_a_file_with_no_extension() {
     let fx = Fixture::new();
@@ -29,7 +29,7 @@ fn fr49_magika_types_a_file_with_no_extension() {
     assert_eq!(info.source, Source::Magika, "{info:?}");
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn fr49_low_magika_scores_keep_the_extension() {
     // Magika gives a short Rust file a low score; the row keeps `rust`.
@@ -84,7 +84,7 @@ fn fr52_unknown_mode_is_a_usage_error() {
 
 // FR-53: Mismatches
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn fr53_html_in_a_pdf_gets_a_mark() {
     let fx = Fixture::new();
@@ -100,7 +100,7 @@ fn fr53_html_in_a_pdf_gets_a_mark() {
     assert_eq!(type_cell(&out, "main.rs"), "rust", "{}", out.stdout);
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn fr53_mismatches_lists_only_mismatched_files() {
     let fx = Fixture::new();
@@ -120,7 +120,7 @@ fn fr53_mismatches_lists_only_mismatched_files() {
     assert!(lines[2].starts_with("──"), "{}", out.stdout);
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn fr53_mismatches_are_sorted_by_path_and_fit_the_budget() {
     let fx = Fixture::new();
@@ -147,7 +147,7 @@ fn fr53_no_mismatches_says_so() {
     assert_eq!(lines[1], "no mismatches", "{}", out.stdout);
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn fr53_equal_names_unknown_extensions_and_low_scores_get_no_mark() {
     let fx = Fixture::new();
@@ -177,7 +177,7 @@ fn fr53_the_mismatch_rule() {
 
 // FR-55: Build without Magika
 
-#[cfg(not(feature = "magika"))]
+#[cfg(not(magika))]
 #[test]
 fn fr55_full_acts_as_fast_without_magika() {
     let fx = modes_fixture();
@@ -191,7 +191,7 @@ fn fr55_full_acts_as_fast_without_magika() {
 
 // The detection corpus
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn corpus_files_get_their_expected_labels() {
     use support::corpus_dir;

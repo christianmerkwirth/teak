@@ -15,7 +15,7 @@ fn version_prints_one_line_with_magika_state() {
     let out = teak(&fx, &["--version"]);
     assert_eq!(out.status.code(), Some(0));
     let stdout = String::from_utf8(out.stdout).unwrap();
-    let want = if cfg!(feature = "magika") {
+    let want = if cfg!(magika) {
         format!(
             "teak {} (magika: on, model {})\n",
             env!("CARGO_PKG_VERSION"),
@@ -27,12 +27,12 @@ fn version_prints_one_line_with_magika_state() {
     assert_eq!(stdout, want);
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 fn model_name() -> &'static str {
     magika::MODEL_NAME
 }
 
-#[cfg(not(feature = "magika"))]
+#[cfg(not(magika))]
 fn model_name() -> &'static str {
     unreachable!()
 }
@@ -58,7 +58,7 @@ fn read_head_on_missing_file_is_an_error() {
     assert!(teak::io::read_head(&fx.path().join("nope"), 16).is_err());
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 #[test]
 fn magika_identifies_through_the_io_gate() {
     let fx = Fixture::new();
@@ -150,7 +150,7 @@ mod hooks {
         );
     }
 
-    #[cfg(feature = "magika")]
+    #[cfg(magika)]
     #[test]
     fn magika_reads_are_counted() {
         let fx = Fixture::new();

@@ -1,0 +1,76 @@
+# FR-68 and FR-69 after a release: each archive runs `teak --version` on its
+# own OS and holds the completions and the man page, and `brew install` works.
+#
+# release.yml (cargo-dist) calls this workflow after it announces the release
+# (`post-announce-jobs` in Cargo.toml). Run it by hand for an existing tag.
+name: release-check
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  archive:
+    name: archive (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04, magika: on }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm, magika: on }
+          - { target: aarch64-apple-darwin, runner: macos-14, magika: on }
+          - { target: x86_64-apple-darwin, runner: macos-15-intel, magika: off }
+    runs-on: ${{ matrix.runner }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLAN: ${{ inputs.plan }}
+      TAG_INPUT: ${{ inputs.tag }}
+    steps:
+      - name: Release tag
+        run: |
+          if [ -n "$TAG_INPUT" ]; then tag="$TAG_INPUT"; else tag=$(echo "$PLAN" | jq -r .announcement_tag); fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      - name: Download and unpack
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "teak-${{ matrix.target }}.tar.xz"
+          tar -xJf "teak-${{ matrix.target }}.tar.xz"
+      - name: Version
+        working-directory: teak-${{ matrix.target }}
+        run: |
+          ./teak --version
+          ./teak --version | grep -F "magika: ${{ matrix.magika }}"
+      - name: Completions and man page
+        working-directory: teak-${{ matrix.target }}
+        run: |
+          for f in teak.bash _teak teak.fish teak.1; do test -s "$f"; done
+          MANPAGER=cat man ./teak.1 > /dev/null
+          words=$(bash --norc --noprofile -c 'source ./teak.bash; COMP_WORDS=(teak --fo); COMP_CWORD=1; COMP_LINE="teak --fo"; COMP_POINT=9; _teak teak --fo teak; printf "%s\n" "${COMPREPLY[@]}"' | sort | tr '\n' ' ')
+          echo "$words"
+          test "$words" = "--focus --fold --follow --format "
+      - name: A scan
+        working-directory: teak-${{ matrix.target }}
+        run: ./teak -n 10 --format json . | jq -e '.schema_version == 1'
+
+  brew:
+    name: brew (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - run: brew install "${{ github.repository_owner }}/tap/teak"
+      - run: teak --version
+      - run: man -w teak || true

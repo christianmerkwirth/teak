@@ -136,7 +136,7 @@ fn fr51_detection_stops_after_about_2_seconds() {
     );
 }
 
-#[cfg(all(feature = "test-hooks", feature = "magika"))]
+#[cfg(all(feature = "test-hooks", magika))]
 #[test]
 fn fr51_magika_types_at_most_300_files_per_run() {
     // Plan A1 (phase-0 report): a Magika sub-cap inside the global cap.

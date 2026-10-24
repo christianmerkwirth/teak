@@ -38,6 +38,7 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo clippy --locked --all-targets --features test-hooks -- -D warnings
       # FR-10: no HTTP client or telemetry crate in the normal dependency graph.
       # ort-sys downloads ONNX Runtime at build time; its ureq is a build dependency.
@@ -63,3 +64,20 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           target/release/teak --version
           target/no-magika/release/teak --version
+
+  # FR-68: `cargo install` from the package works, and the package publishes.
+  # macos-15-intel checks the build without Magika (build.rs, Plan B).
+  install:
+    name: install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install --locked --path . --root "$RUNNER_TEMP/teak"
+      - run: '"$RUNNER_TEMP/teak/bin/teak" --version'
+      - run: cargo publish --locked --dry-run

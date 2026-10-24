@@ -29,7 +29,8 @@ fn generated() -> tempfile::TempDir {
 fn fr69_gen_assets_writes_all_four_files() {
     let dir = generated();
     for name in ASSETS {
-        let text = fs::read_to_string(dir.path().join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let text =
+            fs::read_to_string(dir.path().join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert!(text.contains("format"), "{name} names --format");
     }
 }
@@ -88,7 +89,11 @@ fn bash_complete(script: &Path, word: &str) -> BTreeSet<String> {
         .args(["--norc", "--noprofile", "-c", &cmd])
         .output()
         .expect("run bash");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8(out.stdout)
         .unwrap()
         .lines()
@@ -170,7 +175,11 @@ fn fr68_dist_builds_the_four_targets() {
     let installers = strings(&d["installers"]);
     assert!(installers.contains(&"homebrew"), "{installers:?}");
     assert!(d.get("tap").is_some(), "a Homebrew tap");
-    assert!(manifest_dir().join(".github/workflows/release.yml").is_file());
+    assert!(
+        manifest_dir()
+            .join(".github/workflows/release.yml")
+            .is_file()
+    );
 }
 
 #[test]
@@ -188,7 +197,14 @@ fn fr69_the_archive_includes_the_assets() {
 fn fr68_the_package_has_crates_io_metadata() {
     let m = manifest();
     let p = m["package"].as_table().unwrap();
-    for key in ["description", "license", "repository", "readme", "keywords", "categories"] {
+    for key in [
+        "description",
+        "license",
+        "repository",
+        "readme",
+        "keywords",
+        "categories",
+    ] {
         assert!(p.contains_key(key), "package.{key}");
     }
     assert!(manifest_dir().join("README.md").is_file());

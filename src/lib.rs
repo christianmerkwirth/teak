@@ -43,12 +43,12 @@ use view::View;
 /// The `teak --version` line, without the newline.
 pub fn version_line() -> String {
     let version = env!("CARGO_PKG_VERSION");
-    #[cfg(feature = "magika")]
+    #[cfg(magika)]
     return format!(
         "teak {version} (magika: on, model {})",
         detect::magika::Model::version()
     );
-    #[cfg(not(feature = "magika"))]
+    #[cfg(not(magika))]
     return format!("teak {version} (magika: off)");
 }
 
@@ -662,42 +662,43 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
                 {
                     code = 1;
                 }
-                let _t = timer("layout");
-                let written = if scan.why.is_none() && set.format == Format::Md {
-                    if opts.stats {
-                        render::md::write_stats(&scan, &lopts, out)
+                let written = {
+                    let _t = timer("layout");
+                    if scan.why.is_none() && set.format == Format::Md {
+                        if opts.stats {
+                            render::md::write_stats(&scan, &lopts, out)
+                        } else {
+                            render::md::write(&scan, &lopts, out)
+                        }
+                    } else if scan.why.is_none() && set.format == Format::Json {
+                        let doc = render::json::document(&scan, &lopts, opts.json_full, opts.stats);
+                        let sep = match (array, docs) {
+                            (false, _) => "",
+                            (true, 0) => "[\n",
+                            (true, _) => ",\n",
+                        };
+                        docs += 1;
+                        let end = if array { "" } else { "\n" };
+                        out.write_all(format!("{sep}{doc}{end}").as_bytes())
                     } else {
-                        render::md::write(&scan, &lopts, out)
+                        let lines = if let Some(why) = &scan.why {
+                            why.iter()
+                                .map(|l| layout::Line {
+                                    spans: vec![layout::Span {
+                                        text: l.clone(),
+                                        paint: layout::Paint::Plain,
+                                    }],
+                                    dim: false,
+                                })
+                                .collect()
+                        } else if opts.stats {
+                            layout::stats(&scan, &lopts)
+                        } else {
+                            layout::fit(&scan, &lopts)
+                        };
+                        render::write(&lines, &scan.tree, &style, out)
                     }
-                } else if scan.why.is_none() && set.format == Format::Json {
-                    let doc = render::json::document(&scan, &lopts, opts.json_full, opts.stats);
-                    let sep = match (array, docs) {
-                        (false, _) => "",
-                        (true, 0) => "[\n",
-                        (true, _) => ",\n",
-                    };
-                    docs += 1;
-                    let end = if array { "" } else { "\n" };
-                    out.write_all(format!("{sep}{doc}{end}").as_bytes())
-                } else {
-                    let lines = if let Some(why) = &scan.why {
-                        why.iter()
-                            .map(|l| layout::Line {
-                                spans: vec![layout::Span {
-                                    text: l.clone(),
-                                    paint: layout::Paint::Plain,
-                                }],
-                                dim: false,
-                            })
-                            .collect()
-                    } else if opts.stats {
-                        layout::stats(&scan, &lopts)
-                    } else {
-                        layout::fit(&scan, &lopts)
-                    };
-                    render::write(&lines, &scan.tree, &style, out)
                 };
-                drop(_t);
                 if written.is_err() {
                     // A closed pipe (for example `teak | head`): stop quietly.
                     cx.finish(&opts.paths);

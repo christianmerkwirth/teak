@@ -103,7 +103,7 @@ pub fn read_rule_file(path: &Path, max: usize) -> io::Result<Vec<u8>> {
 /// `read_at` goes through this gate, so the hooks see the bytes. The read delay
 /// applies once per file, when it opens. The block at offset 0 is kept, so
 /// the secret check needs no second read.
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 pub struct MagikaInput {
     file: File,
     len: u64,
@@ -112,7 +112,7 @@ pub struct MagikaInput {
     path: std::path::PathBuf,
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 impl MagikaInput {
     pub fn open(path: &Path) -> io::Result<MagikaInput> {
         let file = File::open(path)?;
@@ -134,7 +134,7 @@ impl MagikaInput {
     }
 }
 
-#[cfg(feature = "magika")]
+#[cfg(magika)]
 impl magika::SyncInput for MagikaInput {
     fn length(&self) -> magika::Result<u64> {
         Ok(self.len)

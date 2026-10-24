@@ -23,10 +23,10 @@ pub struct Identified {
 
 #[derive(Default)]
 pub struct Model {
-    #[cfg(feature = "magika")]
+    #[cfg(magika)]
     session: Option<::magika::Session>,
     /// The session could not be made; do not try again.
-    #[cfg(feature = "magika")]
+    #[cfg(magika)]
     broken: bool,
 }
 
@@ -37,20 +37,20 @@ impl Model {
 
     /// The model name for `--version` and the cache header.
     pub fn version() -> &'static str {
-        #[cfg(feature = "magika")]
+        #[cfg(magika)]
         return ::magika::MODEL_NAME;
-        #[cfg(not(feature = "magika"))]
+        #[cfg(not(magika))]
         return "none";
     }
 
     /// True when this build has Magika.
     pub fn available() -> bool {
-        cfg!(feature = "magika")
+        cfg!(magika)
     }
 
     /// Types one regular file. All reads go through `io::MagikaInput`.
     /// `None` when the file cannot be read or the model is not there.
-    #[cfg(feature = "magika")]
+    #[cfg(magika)]
     pub fn identify(&mut self, path: &Path) -> Option<Identified> {
         use ::magika::{FeaturesOrRuled, FileType};
         if self.broken {
@@ -100,7 +100,7 @@ impl Model {
         })
     }
 
-    #[cfg(not(feature = "magika"))]
+    #[cfg(not(magika))]
     pub fn identify(&mut self, _path: &Path) -> Option<Identified> {
         None
     }
