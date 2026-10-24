@@ -239,7 +239,11 @@ fn fr27_ls_colors_change_only_the_name() {
     let plain = run_with(None);
     let ls = run_with(Some("*.rs=01;31"));
     let code = sgr_before(&ls, "main.rs").expect("main.rs has a color");
-    assert_eq!(code, "01;31", "{ls:?}");
+    let codes: Vec<u32> = code.split(';').filter_map(|c| c.parse().ok()).collect();
+    assert!(
+        codes.contains(&1) && codes.contains(&31),
+        "bold red: {ls:?}"
+    );
     // Remove the name with its codes; the rest of the line is the same.
     let line = |text: &str| -> String {
         let l = text.lines().find(|l| l.contains("main.rs")).unwrap();

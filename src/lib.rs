@@ -262,7 +262,7 @@ pub fn layout_opts(opts: &Opts, set: &Settings) -> LayoutOpts {
 /// code: 0, or 1 when a root is missing or an entry had no access.
 pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -> u8 {
     let set = settings(opts, env);
-    let style = Style { color: set.color };
+    let style = Style::new(set.color, env.ls_colors.as_deref());
     let lopts = layout_opts(opts, &set);
     let mut code = 0;
     for path in &opts.paths {
