@@ -29,7 +29,7 @@ fn by_name(name: &[u8]) -> bool {
 }
 
 /// `-----BEGIN ... PRIVATE KEY-----` anywhere in the head.
-fn has_private_key(head: &[u8]) -> bool {
+pub fn has_private_key(head: &[u8]) -> bool {
     const BEGIN: &[u8] = b"-----BEGIN ";
     let mut rest = head;
     while let Some(i) = find(rest, BEGIN) {

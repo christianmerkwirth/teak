@@ -21,7 +21,7 @@ pub mod walk;
 
 use std::collections::HashMap;
 use std::io::{IsTerminal, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use aggregate::Aggs;
 use chaff::ChaffTag;
@@ -56,6 +56,8 @@ pub struct Env {
     pub no_color: bool,
     pub clicolor_force: bool,
     pub ls_colors: Option<String>,
+    /// Where the type cache lives (see [`cache::dir_from_env`]).
+    pub cache_dir: Option<PathBuf>,
 }
 
 impl Env {
@@ -75,10 +77,12 @@ impl Env {
             no_color: var("NO_COLOR").is_some(),
             clicolor_force: var("CLICOLOR_FORCE").is_some_and(|v| v != "0"),
             ls_colors: var("LS_COLORS"),
+            cache_dir: cache::dir_from_env(),
         }
     }
 
-    /// A fixed environment for library callers: a pipe, no colors.
+    /// A fixed environment for library callers: a pipe, no colors, no
+    /// type cache.
     pub fn fixed(scan_time: i64) -> Env {
         Env {
             stdout_tty: false,
@@ -87,6 +91,7 @@ impl Env {
             no_color: false,
             clicolor_force: false,
             ls_colors: None,
+            cache_dir: None,
         }
     }
 }
@@ -201,12 +206,49 @@ pub struct Context {
 }
 
 impl Context {
-    /// Fails when a `--templates` directory cannot be read.
-    pub fn new(opts: &Opts) -> Result<Context, cli::UsageError> {
+    /// Starts to load the type cache on its own thread, so it loads while
+    /// the walk runs (Plan A3). No cache with `--no-cache`, with
+    /// `--detect off`, or without a cache directory. Fails when a
+    /// `--templates` directory cannot be read.
+    pub fn new(opts: &Opts, env: &Env) -> Result<Context, cli::UsageError> {
+        let templates =
+            chaff::templates::Templates::for_opts(&opts.templates, opts.templates_only)?;
+        let mut detector = detect::Detector::new(opts.detect);
+        if let Some(dir) = env.cache_dir.clone()
+            && !opts.no_cache
+            && opts.detect != detect::DetectMode::Off
+        {
+            let loading = std::thread::spawn(move || {
+                let _t = timer("cache_load");
+                cache::Cache::load(&dir, detect::magika::Model::version())
+            });
+            detector.set_cache(
+                detect::PendingCache::Loading(loading),
+                templates.fingerprint(),
+                env.scan_time,
+            );
+        }
         Ok(Context {
-            detector: detect::Detector::new(opts.detect),
-            templates: chaff::templates::Templates::for_opts(&opts.templates, opts.templates_only)?,
+            detector,
+            templates,
         })
+    }
+
+    /// Saves the type cache, unless its directory is inside a scanned root:
+    /// teak never writes into the tree it shows.
+    pub fn finish(&mut self, roots: &[PathBuf]) {
+        let Some(cache) = self.detector.take_cache() else {
+            return;
+        };
+        let dir = std::path::absolute(cache.dir()).unwrap_or_else(|_| cache.dir().to_path_buf());
+        let inside = roots.iter().any(|r| {
+            let abs = std::path::absolute(r).unwrap_or_else(|_| r.clone());
+            let real = std::fs::canonicalize(r).unwrap_or_else(|_| abs.clone());
+            dir.starts_with(&abs) || dir.starts_with(&real)
+        });
+        if !inside {
+            let _ = cache.save();
+        }
     }
 }
 
@@ -316,28 +358,50 @@ pub fn build(
             &mut labels,
             &mut cx.detector,
             detect::Cap::DEFAULT,
+            checks_on(opts),
         )
     };
     if checks_on(opts) {
         let _t = timer("checks");
         let mut moved = Vec::new();
-        for &id in &detected.read_text {
+        for &(id, cached) in &detected.checks {
             let tag = tags[id as usize];
             let named = tag.class == Some(chaff::ChaffClass::Boilerplate);
             if tag.class.is_some() && !named {
                 continue;
             }
-            let Ok(head) = io::read_head(&tree.path(id), chaff::content::READ_MAX) else {
-                continue;
-            };
-            let size = tree.node(id).size;
-            if named {
-                if let Some(label) = classifier.template_label(&head, size) {
-                    tags[id as usize].label = label;
+            let check = match cached {
+                Some(c) => c,
+                None => {
+                    let Ok(head) = io::read_head(&tree.path(id), chaff::content::READ_MAX) else {
+                        continue;
+                    };
+                    let size = tree.node(id).size;
+                    let c = if named {
+                        cache::Check {
+                            class: Some(chaff::ChaffClass::Boilerplate),
+                            template: classifier.template_label(&head, size).unwrap_or(0),
+                        }
+                    } else {
+                        let found = chaff::content::check(&head, size, &cx.templates);
+                        cache::Check {
+                            class: found.map(|(class, _)| class),
+                            template: found.map_or(0, |(_, t)| t),
+                        }
+                    };
+                    let key = cache::Key::of(tree.node(id));
+                    if let Some(cache) = cx.detector.cache() {
+                        cache.set_check(key, c);
+                    }
+                    c
                 }
+            };
+            if named {
+                tags[id as usize].label = check.template;
                 continue;
             }
-            if let Some(tag) = classifier.classify_content(&tree, id, &head, size) {
+            if let Some(class) = check.class {
+                let tag = classifier.content_tag(&tree, id, class, check.template);
                 tags[id as usize] = tag;
                 if matches!(tag.action, chaff::Action::Fold | chaff::Action::Hide) {
                     moved.push(id);
@@ -387,7 +451,7 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
             }
         };
     }
-    let mut cx = match Context::new(opts) {
+    let mut cx = match Context::new(opts, env) {
         Ok(cx) => cx,
         Err(e) => {
             let _ = writeln!(err, "teak: {e}");
@@ -412,6 +476,7 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
                 };
                 if render::write(&lines, &scan.tree, &style, out).is_err() {
                     // A closed pipe (for example `teak | head`): stop quietly.
+                    cx.finish(&opts.paths);
                     return code;
                 }
             }
@@ -422,5 +487,6 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
         }
     }
     let _ = out.flush();
+    cx.finish(&opts.paths);
     code
 }

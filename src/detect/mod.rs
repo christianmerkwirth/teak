@@ -28,6 +28,10 @@ pub mod fast {
             && let Some((l, text)) = magic::by_magic(head)
             && (!text || by_ext.is_none())
         {
+            // `infer` calls every `#!` script shell; the interpreter knows.
+            if text && let Some(s) = magic::by_shebang(head) {
+                return TypeInfo::new(s, Source::Magic);
+            }
             let mut t = TypeInfo::new(l, Source::Magic);
             t.mismatch = by_ext.filter(|&e| !same_family(e, l));
             return t;
@@ -69,6 +73,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use crate::cache::{Cache, Check, Hit, Key};
 use crate::chaff::{ChaffClass, ChaffTag};
 use crate::tree::{Kind, Node, NodeId, Tree};
 use crate::view::{RowKind, View};
@@ -513,6 +518,9 @@ pub struct Typed {
     pub model: bool,
     /// A secret by name, or a private-key header in the content.
     pub secret: bool,
+    /// The type came from the cache, with this check result (if the checks
+    /// ran for the file before).
+    pub cached: Option<Option<Check>>,
 }
 
 /// The global cap of content detection (FR-51), with the Magika sub-cap of
@@ -533,6 +541,12 @@ impl Cap {
     };
 }
 
+/// A type cache that may still be loading on its own thread (Plan A3).
+pub enum PendingCache {
+    Loading(std::thread::JoinHandle<Cache>),
+    Ready(Cache),
+}
+
 /// Types files: stat → names → (Magika | magic bytes) → extension. Content
 /// comes only through `io`, never with `--detect off`, for non-regular
 /// files, or on a pseudo file system.
@@ -545,6 +559,9 @@ pub struct Detector {
     typed: usize,
     /// Files that Magika typed in this run.
     model_used: usize,
+    cache: Option<PendingCache>,
+    /// The template table hash and the scan time, for the cache.
+    cache_run: (u64, i64),
 }
 
 impl Detector {
@@ -556,7 +573,77 @@ impl Detector {
             start: Instant::now(),
             typed: 0,
             model_used: 0,
+            cache: None,
+            cache_run: (0, 0),
         }
+    }
+
+    /// Uses a type cache. `templates` is the template table hash; check
+    /// results from another table do not count.
+    pub fn set_cache(&mut self, cache: PendingCache, templates: u64, scan_time: i64) {
+        self.cache = Some(cache);
+        self.cache_run = (templates, scan_time);
+    }
+
+    /// The cache, once it has loaded.
+    pub fn cache(&mut self) -> Option<&mut Cache> {
+        if let Some(PendingCache::Loading(_)) = self.cache {
+            let Some(PendingCache::Loading(handle)) = self.cache.take() else {
+                unreachable!()
+            };
+            let (templates, now) = self.cache_run;
+            if let Ok(mut c) = handle.join() {
+                c.begin(templates, now);
+                self.cache = Some(PendingCache::Ready(c));
+            }
+        }
+        match &mut self.cache {
+            Some(PendingCache::Ready(c)) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// Takes the cache out, to save it.
+    pub fn take_cache(&mut self) -> Option<Cache> {
+        self.cache()?;
+        match self.cache.take() {
+            Some(PendingCache::Ready(c)) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// The run makes Magika results.
+    fn full(&self) -> bool {
+        self.mode == DetectMode::Full && magika::Model::available()
+    }
+
+    /// The cached type of a file, if it is still valid: the file did not
+    /// change, the mode is the same, a type from the name or the extension
+    /// still fits the name, and the checks ran when `need_check`.
+    fn cached(&mut self, tree: &Tree, id: NodeId, need_check: bool) -> Option<Typed> {
+        let full = self.full();
+        let hit = self.cache()?.get(Key::of(tree.node(id)))?;
+        let name = tree.name(id);
+        let fits = match hit.source {
+            Source::Name => names::by_name(name) == Some(hit.label),
+            Source::Ext => ext::by_name(name) == Some(hit.label),
+            _ => true,
+        };
+        if hit.full != full || !fits || (need_check && hit.check.is_none()) {
+            return None;
+        }
+        let mut info = TypeInfo::new(hit.label, hit.source);
+        info.score = hit.score;
+        if hit.source == Source::Magika {
+            info.mismatch = mismatch(hit.label, hit.score, name);
+        }
+        Some(Typed {
+            info,
+            read: false,
+            model: false,
+            secret: hit.secret || secret::is_secret(name, None),
+            cached: Some(hit.check),
+        })
     }
 
     /// Starts the cap for one root.
@@ -572,9 +659,19 @@ impl Detector {
         self.typed >= self.cap.files || self.start.elapsed() >= self.cap.time
     }
 
-    /// Types one file within the cap. After the cap, a file whose type
+    /// Types one file within the cap, from the cache when it can (a hit
+    /// reads nothing and does not count). After the cap, a file whose type
     /// needs its content gets the extension label, marked as estimated.
-    pub fn type_capped(&mut self, tree: &Tree, id: NodeId) -> Typed {
+    /// `need_check`: the content checks will want this file.
+    pub fn type_capped(&mut self, tree: &Tree, id: NodeId, need_check: bool) -> Typed {
+        let n = tree.node(id);
+        let reads = self.mode != DetectMode::Off
+            && n.kind == Kind::File
+            && n.size > 0
+            && !n.has(crate::tree::flag::PSEUDO_FS);
+        if reads && let Some(t) = self.cached(tree, id, need_check) {
+            return t;
+        }
         if self.mode != DetectMode::Off && self.capped() && sample::needs_content(tree, id) {
             let node = tree.node(id);
             let name = tree.name(id);
@@ -585,42 +682,68 @@ impl Detector {
                 read: false,
                 model: false,
                 secret: secret::is_secret(name, None),
+                cached: None,
             };
         }
         let use_model = self.model_used < self.cap.model_files;
-        let t = self.type_file(tree, id, use_model);
+        let (t, content_secret) = self.type_read(tree, id, use_model);
         self.typed += usize::from(t.read);
         self.model_used += usize::from(t.model);
+        if t.read {
+            let full = self.full();
+            let key = Key::of(tree.node(id));
+            if let Some(cache) = self.cache() {
+                cache.put(
+                    key,
+                    Hit {
+                        label: t.info.label,
+                        score: t.info.score,
+                        source: t.info.source,
+                        full,
+                        secret: content_secret,
+                        check: None,
+                    },
+                );
+            }
+        }
         t
     }
 
     /// Types one file. `use_model` lets Magika run (with `--detect full`).
     pub fn type_file(&mut self, tree: &Tree, id: NodeId, use_model: bool) -> Typed {
+        self.type_read(tree, id, use_model).0
+    }
+
+    /// [`Detector::type_file`], and whether the content holds a private key.
+    fn type_read(&mut self, tree: &Tree, id: NodeId, use_model: bool) -> (Typed, bool) {
         let node = *tree.node(id);
         let done = |info: TypeInfo| Typed {
             info,
             read: false,
             model: false,
             secret: false,
+            cached: None,
         };
         if let Some(l) = stat_label(&node) {
-            return done(TypeInfo::new(l, Source::Stat));
+            return (done(TypeInfo::new(l, Source::Stat)), false);
         }
         let name = tree.name(id);
         if node.size == 0 {
-            return Typed {
+            let t = Typed {
                 secret: secret::is_secret(name, None),
                 ..done(TypeInfo::new(label_id("empty"), Source::Stat))
             };
+            return (t, false);
         }
         let readable = self.mode != DetectMode::Off
             && node.kind == Kind::File
             && !node.has(crate::tree::flag::PSEUDO_FS);
         if !readable {
-            return Typed {
+            let t = Typed {
                 secret: secret::is_secret(name, None),
                 ..done(fast_only(name, None))
             };
+            return (t, false);
         }
         let path = tree.path(id);
         // Exact names need no model; the head read still feeds the secret check.
@@ -643,20 +766,26 @@ impl Detector {
             } else {
                 from_model(name, m.label, m.score)
             };
-            return Typed {
+            let key = secret::has_private_key(&m.head);
+            let t = Typed {
                 info,
                 read: true,
                 model: true,
-                secret: secret::is_secret(name, Some(&m.head)),
+                secret: key || secret::is_secret(name, None),
+                cached: None,
             };
+            return (t, key);
         }
         let head = crate::io::read_head(&path, HEAD_MAX).ok();
-        Typed {
+        let key = head.as_deref().is_some_and(secret::has_private_key);
+        let t = Typed {
             info: fast_only(name, head.as_deref()),
             read: head.is_some(),
             model: false,
-            secret: secret::is_secret(name, head.as_deref()),
-        }
+            secret: key || secret::is_secret(name, None),
+            cached: None,
+        };
+        (t, key)
     }
 }
 
@@ -686,8 +815,9 @@ pub struct Detected {
     /// The types of the files in the visible rows.
     pub types: HashMap<NodeId, TypeInfo>,
     /// Text files with their own row (or named in a chaff line) whose
-    /// content detection read: the files for the content checks (FR-42).
-    pub read_text: Vec<NodeId>,
+    /// content detection read, or whose type came from the cache: the files
+    /// for the content checks (FR-42), with the cached check result.
+    pub checks: Vec<(NodeId, Option<Check>)>,
     /// Per node: the label is an estimate (from a sample, or the extension
     /// after the cap).
     pub estimated: Vec<bool>,
@@ -724,6 +854,7 @@ pub fn run(
     labels: &mut [LabelId],
     det: &mut Detector,
     cap: Cap,
+    checks_on: bool,
 ) -> Detected {
     det.begin(cap);
     let mut ids: Vec<NodeId> = Vec::new();
@@ -757,7 +888,7 @@ pub fn run(
         }
     }
     let mut types = HashMap::new();
-    let mut read_text = Vec::new();
+    let mut checks = Vec::new();
     let mut estimated = vec![false; tree.len()];
     let mut mark = |tree: &mut Tree, id: NodeId, t: &Typed| {
         if t.secret {
@@ -767,10 +898,11 @@ pub fn run(
         estimated[id as usize] = t.info.estimated;
     };
     for id in ids {
-        let t = det.type_capped(tree, id);
+        let entry = entries.contains(&id);
+        let t = det.type_capped(tree, id, checks_on && entry);
         mark(tree, id, &t);
-        if t.read && t.info.is_text && entries.contains(&id) {
-            read_text.push(id);
+        if (t.read || t.cached.is_some()) && t.info.is_text && entry {
+            checks.push((id, t.cached.flatten()));
         }
         types.insert(id, t.info);
     }
@@ -783,7 +915,7 @@ pub fn run(
             if det.capped() {
                 break;
             }
-            let t = det.type_capped(tree, id);
+            let t = det.type_capped(tree, id, false);
             mark(tree, id, &t);
             sampled.insert(id, t.info.label);
             if let Some(key) = sample::bucket(tree, id) {
@@ -802,7 +934,7 @@ pub fn run(
     }
     Detected {
         types,
-        read_text,
+        checks,
         estimated,
     }
 }
@@ -840,7 +972,7 @@ pub fn mismatched(
             continue;
         }
         if tree.node(id).kind == Kind::File {
-            let t = det.type_capped(tree, id);
+            let t = det.type_capped(tree, id, false);
             if t.secret {
                 tree.nodes[id as usize].flags |= crate::tree::flag::SECRET;
             }

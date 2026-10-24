@@ -150,6 +150,10 @@ struct Cli {
     #[arg(long, help_heading = "Content")]
     mismatches: bool,
 
+    /// Do not read or write the type cache
+    #[arg(long = "no-cache", help_heading = "Content")]
+    no_cache: bool,
+
     /// Add boilerplate templates from DIR (boilerplate/ and generated/)
     #[arg(long, value_name = "DIR", action = ArgAction::Append, help_heading = "Content")]
     templates: Vec<PathBuf>,
@@ -260,6 +264,8 @@ pub struct Opts {
     pub preview: PreviewMode,
     /// `--mismatches`: the list view.
     pub mismatches: bool,
+    /// `--no-cache`: no type-cache I/O.
+    pub no_cache: bool,
     pub templates: Vec<PathBuf>,
     pub templates_only: bool,
     pub dump_templates: Option<PathBuf>,
@@ -339,6 +345,7 @@ where
             DetectArg::Full => DetectMode::Full,
         },
         mismatches: cli.mismatches,
+        no_cache: cli.no_cache,
         templates: cli.templates,
         templates_only: cli.templates_only,
         dump_templates: cli.dump_templates,

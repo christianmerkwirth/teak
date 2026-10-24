@@ -3,7 +3,6 @@
 
 mod support;
 
-use std::fs;
 use std::path::Path;
 
 use support::{Fixture, corpus, run_cached};
@@ -99,9 +98,9 @@ fn fr54_another_model_version_means_new_reads() {
     run_cached(fx.path(), cache.path(), &["-L", "1"]);
     // Change the model name in the header: `TEAKC`, u16 version, u16 length.
     let path = types_bin(cache.path());
-    let mut bytes = fs::read(&path).unwrap();
+    let mut bytes = std::fs::read(&path).unwrap();
     bytes[9] ^= 0x20;
-    fs::write(&path, bytes).unwrap();
+    std::fs::write(&path, bytes).unwrap();
     let env = [("XDG_CACHE_HOME", cache.path().to_str().unwrap())];
     let (out, report) = support::run_report_env(fx.path(), &["-L", "1"], &env);
     assert_eq!(out.code, Some(0), "{out:?}");
@@ -114,7 +113,7 @@ fn fr54_no_cache_does_no_cache_io() {
     let fx = cached_fixture();
     let cache = Fixture::new();
     run_cached(fx.path(), cache.path(), &["-L", "1"]);
-    let before = fs::read(types_bin(cache.path())).unwrap();
+    let before = std::fs::read(types_bin(cache.path())).unwrap();
     let env = [("XDG_CACHE_HOME", cache.path().to_str().unwrap())];
     let (out, report) = support::run_report_env(fx.path(), &["-L", "1", "--no-cache"], &env);
     assert_eq!(out.code, Some(0), "{out:?}");
@@ -124,7 +123,7 @@ fn fr54_no_cache_does_no_cache_io() {
         "{:?}",
         report.stages_ms
     );
-    assert_eq!(fs::read(types_bin(cache.path())).unwrap(), before);
+    assert_eq!(std::fs::read(types_bin(cache.path())).unwrap(), before);
     // A cache dir that does not exist stays that way.
     let missing = cache.path().join("nope");
     let env = [("XDG_CACHE_HOME", missing.to_str().unwrap())];

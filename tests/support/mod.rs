@@ -498,7 +498,8 @@ pub fn scan(dir: &Path, args: &[&str]) -> teak::Scan {
         teak::cli::Budget::Lines(n) => n,
         teak::cli::Budget::Auto => 100,
     };
-    let mut cx = teak::Context::new(&opts).expect("valid templates");
+    let env = teak::Env::fixed(SCAN_TIME as i64);
+    let mut cx = teak::Context::new(&opts, &env).expect("valid templates");
     teak::build(dir, &opts, &mut cx, budget, SCAN_TIME as i64).expect("scan")
 }
 
