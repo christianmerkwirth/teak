@@ -128,20 +128,22 @@ pub fn settings(opts: &Opts, env: &Env) -> Settings {
             _ => 100,
         },
     };
-    // --color wins, then CLICOLOR_FORCE, then NO_COLOR, then the format.
-    let color = match opts.color {
-        ColorWhen::Always => true,
-        ColorWhen::Never => false,
-        ColorWhen::Auto => {
-            if env.clicolor_force {
-                true
-            } else if env.no_color {
-                false
-            } else {
-                format == Format::Tty
+    // `md` and `json` never have colors. Then --color wins, then
+    // CLICOLOR_FORCE, then NO_COLOR, then the format.
+    let color = matches!(format, Format::Tty | Format::Plain)
+        && match opts.color {
+            ColorWhen::Always => true,
+            ColorWhen::Never => false,
+            ColorWhen::Auto => {
+                if env.clicolor_force {
+                    true
+                } else if env.no_color {
+                    false
+                } else {
+                    format == Format::Tty
+                }
             }
-        }
-    };
+        };
     Settings {
         format,
         width,
@@ -645,6 +647,9 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
         }
     };
     let mut code = 0;
+    // Several roots in `json` form one array of documents.
+    let array = set.format == Format::Json && opts.paths.len() > 1 && opts.why.is_none();
+    let mut docs = 0;
     for path in &opts.paths {
         match build(path, opts, &mut cx, set.budget, env.scan_time) {
             Ok(scan) => {
@@ -656,9 +661,25 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
                 {
                     code = 1;
                 }
-                let lines = {
-                    let _t = timer("layout");
-                    if let Some(why) = &scan.why {
+                let _t = timer("layout");
+                let written = if scan.why.is_none() && set.format == Format::Md {
+                    if opts.stats {
+                        render::md::write_stats(&scan, &lopts, out)
+                    } else {
+                        render::md::write(&scan, &lopts, out)
+                    }
+                } else if scan.why.is_none() && set.format == Format::Json {
+                    let doc = render::json::document(&scan, &lopts, opts.json_full, opts.stats);
+                    let sep = match (array, docs) {
+                        (false, _) => "",
+                        (true, 0) => "[\n",
+                        (true, _) => ",\n",
+                    };
+                    docs += 1;
+                    let end = if array { "" } else { "\n" };
+                    out.write_all(format!("{sep}{doc}{end}").as_bytes())
+                } else {
+                    let lines = if let Some(why) = &scan.why {
                         why.iter()
                             .map(|l| layout::Line {
                                 spans: vec![layout::Span {
@@ -672,9 +693,11 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
                         layout::stats(&scan, &lopts)
                     } else {
                         layout::fit(&scan, &lopts)
-                    }
+                    };
+                    render::write(&lines, &scan.tree, &style, out)
                 };
-                if render::write(&lines, &scan.tree, &style, out).is_err() {
+                drop(_t);
+                if written.is_err() {
                     // A closed pipe (for example `teak | head`): stop quietly.
                     cx.finish(&opts.paths);
                     return code;
@@ -690,6 +713,9 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
                 code = 1;
             }
         }
+    }
+    if array {
+        let _ = out.write_all(if docs == 0 { b"[]\n" } else { b"\n]\n" });
     }
     let _ = out.flush();
     cx.finish(&opts.paths);

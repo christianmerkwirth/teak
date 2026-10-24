@@ -25,8 +25,9 @@ fn mixed_fixture() -> Fixture {
     for i in 0..30 {
         fx.sized(&format!("data/{}.csv", support::word(i)), 2000 + i as u64);
     }
+    // At the root: a uniform `img/` would fold the series into its summary.
     for i in 1..=12 {
-        fx.sized(&format!("img/IMG_{i:04}.png"), 5000);
+        fx.sized(&format!("IMG_{i:04}.png"), 5000);
     }
     fx.mtime_all(3600);
     fx
@@ -358,7 +359,11 @@ fn fr64_header_and_types_match_the_tree() {
     let header = &doc["header"];
     // 7 small files, 30 csv, 12 png.
     assert_eq!(header["files"], 49);
-    assert_eq!(header["kinds"], serde_json::json!(["rust crate"]));
+    // The fake `.git/` cannot be read, so it shows as a kind (FR-57).
+    assert_eq!(
+        header["kinds"],
+        serde_json::json!(["rust crate", "git repo"])
+    );
     let types = doc["types"].as_array().unwrap();
     let image = types.iter().find(|t| t["group"] == "image").unwrap();
     assert_eq!(image["files"], 12);
@@ -403,7 +408,7 @@ fn count_files(root: &Path) -> u64 {
 #[test]
 fn fr64_json_full_has_every_entry() {
     let fx = mixed_fixture();
-    fx.symlink("link", "README.md");
+    fx.symlink("link", "README.md").mode("src/main.rs", 0o644);
     let out = run(&fx, &["--json-full", "-n", "12"]);
     let doc = json(&out);
     assert_valid(&doc);

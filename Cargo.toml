@@ -14,7 +14,7 @@ default = ["magika"]
 # download happens at build time only (a build dependency of ort-sys).
 magika = ["dep:magika", "dep:ort"]
 # Read counters, read delays, and stage timers for tests. Never in releases.
-test-hooks = ["dep:serde_json"]
+test-hooks = []
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
@@ -32,7 +32,8 @@ lscolors = { version = "0.21.0", default-features = false }
 magika = { version = "1.1.0", optional = true }
 ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = ["download-binaries", "tls-rustls"] }
 rustix = { version = "1.1.5", features = ["fs"] }
-serde_json = { version = "1", optional = true }
+# `--format json`: `preserve_order` keeps the object keys in a fixed order.
+serde_json = { version = "1", features = ["preserve_order"] }
 terminal_size = "0.4.4"
 unicode-width = "0.2.2"
 uzers = { version = "0.12.2", default-features = false }

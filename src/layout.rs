@@ -449,13 +449,8 @@ impl Cx<'_> {
                 paint: Paint::Warn,
             });
         }
-        let size: u64 = tree.nodes.iter().map(|n| n.size).sum();
-        let mut text = format!(
-            "  {}{}{}",
-            self.size(size),
-            g.sep,
-            files_text(tree.file_count(ROOT))
-        );
+        let (size, files) = root_totals(tree);
+        let mut text = format!("  {}{}{}", self.size(size), g.sep, files_text(files));
         if !self.scan.kinds.is_empty() {
             let _ = write!(text, "{}{}", g.sep, self.scan.kinds.join(" + "));
         }
@@ -481,19 +476,7 @@ impl Cx<'_> {
     /// The git cell: the status letter of a file, `M<n>` for a directory
     /// with changed files below it.
     fn git_cell(&self, node: NodeId) -> String {
-        let Some(git) = &self.scan.git else {
-            return String::new();
-        };
-        let tree = self.tree();
-        if tree.node(node).is_dir() {
-            match git.changed_below(tree, node) {
-                0 => String::new(),
-                n => format!("M{n}"),
-            }
-        } else {
-            git.of(node)
-                .map_or(String::new(), |c| c.letter().to_string())
-        }
+        git_cell(self.scan, node)
     }
 
     fn node_cells(&self, prefix: String, node: NodeId, joined: &[NodeId], open: bool) -> Cells {
@@ -685,29 +668,7 @@ impl Cx<'_> {
     /// The type mix of a series by count (`png 9 · jpeg 1`), from the typed
     /// members. A sampled series shows its main type, marked as estimated.
     fn series_mix(&self, series: &Series) -> (String, bool) {
-        let typed: Vec<LabelId> = series
-            .members
-            .iter()
-            .filter_map(|m| self.scan.types.get(m).map(|t| t.label))
-            .collect();
-        let estimated = typed.len() < series.members.len();
-        let mut counts: Vec<(LabelId, u64)> = Vec::new();
-        let labels: Vec<LabelId> = if typed.is_empty() {
-            series
-                .members
-                .iter()
-                .map(|&m| self.scan.labels[m as usize])
-                .collect()
-        } else {
-            typed
-        };
-        for l in labels {
-            match counts.iter_mut().find(|(c, _)| *c == l) {
-                Some((_, n)) => *n += 1,
-                None => counts.push((l, 1)),
-            }
-        }
-        counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let (counts, estimated) = series_counts(self.scan, series);
         if estimated || counts.len() == 1 {
             return (label(counts[0].0).name.to_string(), estimated);
         }
@@ -769,40 +730,8 @@ impl Cx<'_> {
         }
     }
 
-    /// Label → (files, bytes) over the files of the given subtrees, without
-    /// hidden entries. Sorted by bytes, then files, then label. True when a
-    /// label in the mix is an estimate.
     fn mix(&self, roots: &[NodeId]) -> (Vec<(LabelId, u64, u64)>, bool) {
-        let tree = self.tree();
-        let mut acc: Vec<(u64, u64)> = vec![(0, 0); crate::detect::LABELS.len()];
-        let mut estimated = false;
-        let tags: &[ChaffTag] = &self.scan.tags;
-        for &r in roots {
-            let range = r..tree.node(r).end;
-            let mut id = range.start;
-            while id < range.end {
-                if crate::chaff::is_hidden(tags, id) {
-                    id = tree.node(id).end;
-                    continue;
-                }
-                let n = tree.node(id);
-                if !n.is_dir() {
-                    let l = self.scan.labels[id as usize] as usize;
-                    acc[l].0 += 1;
-                    acc[l].1 += n.size;
-                    estimated |= self.scan.estimated[id as usize];
-                }
-                id += 1;
-            }
-        }
-        let mut v: Vec<(LabelId, u64, u64)> = acc
-            .into_iter()
-            .enumerate()
-            .filter(|(_, (f, _))| *f > 0)
-            .map(|(l, (f, b))| (l as LabelId, f, b))
-            .collect();
-        v.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.cmp(&a.1)).then(a.0.cmp(&b.0)));
-        (v, estimated)
+        mix(self.scan, roots)
     }
 
     /// `≈ ` before a mix with an estimate in it (FR-50).
@@ -1146,31 +1075,7 @@ pub fn series_name(series: &Series, g: &Glyphs) -> String {
 pub fn stats(scan: &Scan, opts: &LayoutOpts) -> Vec<Line> {
     let cx = Cx { scan, opts };
     let tree = &scan.tree;
-    let mut groups: Vec<(TypeGroup, u64, u64)> = Vec::new();
-    let mut id: NodeId = 0;
-    while (id as usize) < tree.len() {
-        if crate::chaff::is_hidden(&scan.tags, id) {
-            id = tree.node(id).end;
-            continue;
-        }
-        let n = tree.node(id);
-        if !n.is_dir() {
-            let g = label(scan.labels[id as usize]).group;
-            match groups.iter_mut().find(|(x, _, _)| *x == g) {
-                Some((_, f, b)) => {
-                    *f += 1;
-                    *b += n.size;
-                }
-                None => groups.push((g, 1, n.size)),
-            }
-        }
-        id += 1;
-    }
-    groups.sort_by(|a, b| {
-        b.2.cmp(&a.2)
-            .then(b.1.cmp(&a.1))
-            .then(a.0.name().cmp(b.0.name()))
-    });
+    let mut groups = type_groups(scan);
     let (budget, total_files, folded, hidden) = scan
         .view
         .rows
@@ -1235,6 +1140,128 @@ pub fn stats(scan: &Scan, opts: &LayoutOpts) -> Vec<Line> {
         .into_iter()
         .map(|l| cut_line(l, opts.width, opts.glyphs.ellipsis))
         .collect()
+}
+
+/// The size of all entries and the number of files in the tree: the
+/// header numbers.
+pub fn root_totals(tree: &Tree) -> (u64, u64) {
+    let size = tree.nodes.iter().map(|n| n.size).sum();
+    (size, tree.file_count(ROOT))
+}
+
+/// Label → (files, bytes) over the files of the given subtrees, without
+/// hidden entries. Sorted by bytes, then files, then label. True when a
+/// label in the mix is an estimate.
+pub fn mix(scan: &Scan, roots: &[NodeId]) -> (Vec<(LabelId, u64, u64)>, bool) {
+    let tree = &scan.tree;
+    let mut acc: Vec<(u64, u64)> = vec![(0, 0); crate::detect::LABELS.len()];
+    let mut estimated = false;
+    let tags: &[ChaffTag] = &scan.tags;
+    for &r in roots {
+        let range = r..tree.node(r).end;
+        let mut id = range.start;
+        while id < range.end {
+            if crate::chaff::is_hidden(tags, id) {
+                id = tree.node(id).end;
+                continue;
+            }
+            let n = tree.node(id);
+            if !n.is_dir() {
+                let l = scan.labels[id as usize] as usize;
+                acc[l].0 += 1;
+                acc[l].1 += n.size;
+                estimated |= scan.estimated[id as usize];
+            }
+            id += 1;
+        }
+    }
+    let mut v: Vec<(LabelId, u64, u64)> = acc
+        .into_iter()
+        .enumerate()
+        .filter(|(_, (f, _))| *f > 0)
+        .map(|(l, (f, b))| (l as LabelId, f, b))
+        .collect();
+    v.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.cmp(&a.1)).then(a.0.cmp(&b.0)));
+    (v, estimated)
+}
+
+/// Label → members of a series, high counts first, from the typed
+/// members. A sampled series counts the name labels, and is an estimate.
+pub fn series_counts(scan: &Scan, series: &Series) -> (Vec<(LabelId, u64)>, bool) {
+    let typed: Vec<LabelId> = series
+        .members
+        .iter()
+        .filter_map(|m| scan.types.get(m).map(|t| t.label))
+        .collect();
+    let estimated = typed.len() < series.members.len();
+    let labels: Vec<LabelId> = if typed.is_empty() {
+        series
+            .members
+            .iter()
+            .map(|&m| scan.labels[m as usize])
+            .collect()
+    } else {
+        typed
+    };
+    let mut counts: Vec<(LabelId, u64)> = Vec::new();
+    for l in labels {
+        match counts.iter_mut().find(|(c, _)| *c == l) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((l, 1)),
+        }
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    (counts, estimated)
+}
+
+/// The type groups of all files that are not hidden: (group, files,
+/// bytes), by size, high first (`--stats`, the `md` table, JSON `types`).
+pub fn type_groups(scan: &Scan) -> Vec<(TypeGroup, u64, u64)> {
+    let tree = &scan.tree;
+    let mut groups: Vec<(TypeGroup, u64, u64)> = Vec::new();
+    let mut id: NodeId = 0;
+    while (id as usize) < tree.len() {
+        if crate::chaff::is_hidden(&scan.tags, id) {
+            id = tree.node(id).end;
+            continue;
+        }
+        let n = tree.node(id);
+        if !n.is_dir() {
+            let g = label(scan.labels[id as usize]).group;
+            match groups.iter_mut().find(|(x, _, _)| *x == g) {
+                Some((_, f, b)) => {
+                    *f += 1;
+                    *b += n.size;
+                }
+                None => groups.push((g, 1, n.size)),
+            }
+        }
+        id += 1;
+    }
+    groups.sort_by(|a, b| {
+        b.2.cmp(&a.2)
+            .then(b.1.cmp(&a.1))
+            .then(a.0.name().cmp(b.0.name()))
+    });
+    groups
+}
+
+/// The git cell: the status letter of a file, `M<n>` for a directory with
+/// changed files below it.
+pub fn git_cell(scan: &Scan, node: NodeId) -> String {
+    let Some(git) = &scan.git else {
+        return String::new();
+    };
+    let tree = &scan.tree;
+    if tree.node(node).is_dir() {
+        match git.changed_below(tree, node) {
+            0 => String::new(),
+            n => format!("M{n}"),
+        }
+    } else {
+        git.of(node)
+            .map_or(String::new(), |c| c.letter().to_string())
+    }
 }
 
 /// The width of a preview with `--preview short`.
@@ -1441,7 +1468,8 @@ fn plural(n: u64, one: &str, many: &str) -> String {
     format!("{} {}", thousands(n), if n == 1 { one } else { many })
 }
 
-fn files_text(n: u64) -> String {
+/// `1 file`, `48,213 files`.
+pub fn files_text(n: u64) -> String {
     plural(n, "file", "files")
 }
 

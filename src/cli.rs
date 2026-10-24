@@ -64,6 +64,8 @@ enum ClassArg {
 enum FormatArg {
     Tty,
     Plain,
+    Md,
+    Json,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -218,6 +220,10 @@ struct Cli {
     #[arg(long, value_enum, value_name = "FMT", help_heading = "Output")]
     format: Option<FormatArg>,
 
+    /// JSON with every entry (implies --format json)
+    #[arg(long = "json-full", help_heading = "Output")]
+    json_full: bool,
+
     /// Colors
     #[arg(
         long,
@@ -307,6 +313,8 @@ pub struct Opts {
     pub one_fs: bool,
     pub follow: bool,
     pub format: Option<Format>,
+    /// `--json-full`: JSON with an `entries` list of every node.
+    pub json_full: bool,
     pub color: ColorWhen,
     pub ascii: bool,
     pub width: Option<usize>,
@@ -404,10 +412,17 @@ where
         },
         one_fs: cli.one_file_system,
         follow: cli.follow,
-        format: cli.format.map(|f| match f {
-            FormatArg::Tty => Format::Tty,
-            FormatArg::Plain => Format::Plain,
-        }),
+        format: if cli.json_full {
+            Some(Format::Json)
+        } else {
+            cli.format.map(|f| match f {
+                FormatArg::Tty => Format::Tty,
+                FormatArg::Plain => Format::Plain,
+                FormatArg::Md => Format::Md,
+                FormatArg::Json => Format::Json,
+            })
+        },
+        json_full: cli.json_full,
         color: cli.color,
         ascii: cli.ascii,
         width: cli.width.map(|w| w as usize),
