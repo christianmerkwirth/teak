@@ -298,8 +298,10 @@ impl Cx<'_> {
             } => {
                 let mut cells = self.node_cells(prefix, *node, joined, false);
                 if let Some(u) = uniform {
-                    cells.ty = format!("{} ~{}", label(u.label).name, self.size(u.median_size));
-                    cells.ty_short = cells.ty.clone();
+                    let tail = joined.last().copied().unwrap_or(*node);
+                    let (_, estimated) = self.mix(&[tail]);
+                    let ty = format!("{} ~{}", label(u.label).name, self.size(u.median_size));
+                    (cells.ty, cells.ty_short) = self.approx(estimated, (ty.clone(), ty));
                 }
                 Prepared::Table(Box::new(cells), self.dimmed(*node))
             }
@@ -688,10 +690,12 @@ impl Cx<'_> {
     }
 
     /// Label → (files, bytes) over the files of the given subtrees, without
-    /// hidden entries. Sorted by bytes, then files, then label.
-    fn mix(&self, roots: &[NodeId]) -> Vec<(LabelId, u64, u64)> {
+    /// hidden entries. Sorted by bytes, then files, then label. True when a
+    /// label in the mix is an estimate.
+    fn mix(&self, roots: &[NodeId]) -> (Vec<(LabelId, u64, u64)>, bool) {
         let tree = self.tree();
         let mut acc: Vec<(u64, u64)> = vec![(0, 0); crate::detect::LABELS.len()];
+        let mut estimated = false;
         let tags: &[ChaffTag] = &self.scan.tags;
         for &r in roots {
             let range = r..tree.node(r).end;
@@ -706,6 +710,7 @@ impl Cx<'_> {
                     let l = self.scan.labels[id as usize] as usize;
                     acc[l].0 += 1;
                     acc[l].1 += n.size;
+                    estimated |= self.scan.estimated[id as usize];
                 }
                 id += 1;
             }
@@ -717,18 +722,27 @@ impl Cx<'_> {
             .map(|(l, (f, b))| (l as LabelId, f, b))
             .collect();
         v.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.cmp(&a.1)).then(a.0.cmp(&b.0)));
-        v
+        (v, estimated)
+    }
+
+    /// `≈ ` before a mix with an estimate in it (FR-50).
+    fn approx(&self, estimated: bool, (full, short): (String, String)) -> (String, String) {
+        if !estimated {
+            return (full, short);
+        }
+        let g = self.opts.glyphs.approx;
+        (format!("{g} {full}"), format!("{g} {short}"))
     }
 
     /// `rust 50% toml 20% md 15% +2 types` (by size), and a short form.
     fn size_mix(&self, roots: &[NodeId]) -> (String, String) {
-        let mix = self.mix(roots);
+        let (mix, estimated) = self.mix(roots);
         if mix.is_empty() {
             return ("empty".into(), "empty".into());
         }
         let name = |l: LabelId| label(l).name;
         if mix.len() == 1 {
-            return (name(mix[0].0).into(), name(mix[0].0).into());
+            return self.approx(estimated, (name(mix[0].0).into(), name(mix[0].0).into()));
         }
         let total_bytes: u64 = mix.iter().map(|m| m.2).sum();
         let total_files: u64 = mix.iter().map(|m| m.1).sum();
@@ -753,12 +767,12 @@ impl Cx<'_> {
             name(mix[0].0),
             plural(mix.len() as u64 - 1, "type", "types")
         );
-        (full.join(" "), short)
+        self.approx(estimated, (full.join(" "), short))
     }
 
     /// `csv 8 · json 2` (by count), and a short form.
     fn count_mix(&self, roots: &[NodeId]) -> (String, String) {
-        let mut mix = self.mix(roots);
+        let (mut mix, estimated) = self.mix(roots);
         if mix.is_empty() {
             return ("empty".into(), "empty".into());
         }
@@ -783,7 +797,7 @@ impl Cx<'_> {
                 plural(mix.len() as u64 - 1, "type", "types")
             )
         };
-        (full.join(sep), short)
+        self.approx(estimated, (full.join(sep), short))
     }
 
     fn dir_mix(&self, dir: NodeId) -> (String, String) {

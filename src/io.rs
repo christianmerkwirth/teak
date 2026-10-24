@@ -106,6 +106,13 @@ pub mod hooks {
 
     static READS: Mutex<BTreeMap<PathBuf, u64>> = Mutex::new(BTreeMap::new());
     static STAGES: Mutex<BTreeMap<&'static str, f64>> = Mutex::new(BTreeMap::new());
+    static COUNTS: Mutex<BTreeMap<&'static str, u64>> = Mutex::new(BTreeMap::new());
+
+    /// Adds one to `counts[name]`, for example `magika` per Magika call.
+    pub fn count(name: &'static str) {
+        let mut counts = COUNTS.lock().unwrap_or_else(|e| e.into_inner());
+        *counts.entry(name).or_default() += 1;
+    }
 
     pub(crate) fn count_read(path: &Path, bytes: u64) {
         let mut reads = READS.lock().unwrap_or_else(|e| e.into_inner());
@@ -148,7 +155,8 @@ pub mod hooks {
         }
     }
 
-    /// Writes `{"reads": {...}, "stages_ms": {...}}` to `TEAK_TEST_REPORT`, if set.
+    /// Writes `{"reads": {...}, "stages_ms": {...}, "counts": {...}}` to
+    /// `TEAK_TEST_REPORT`, if set.
     pub fn write_report() {
         let Some(path) = std::env::var_os("TEAK_TEST_REPORT") else {
             return;
@@ -165,7 +173,13 @@ pub mod hooks {
             .iter()
             .map(|(s, ms)| (s.to_string(), (*ms).into()))
             .collect();
-        let report = serde_json::json!({ "reads": reads, "stages_ms": stages });
+        let counts: serde_json::Map<_, _> = COUNTS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(s, n)| (s.to_string(), (*n).into()))
+            .collect();
+        let report = serde_json::json!({ "reads": reads, "stages_ms": stages, "counts": counts });
         if let Err(e) = std::fs::write(&path, report.to_string()) {
             eprintln!(
                 "teak: cannot write test report {}: {e}",

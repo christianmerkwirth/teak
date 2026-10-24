@@ -57,6 +57,8 @@ impl Model {
             return None;
         }
         let mut input = crate::io::MagikaInput::open(path).ok()?;
+        #[cfg(feature = "test-hooks")]
+        crate::io::hooks::count("magika");
         let extracted = FeaturesOrRuled::extract_sync(&mut input).ok()?;
         let head = input.into_head();
         let features = match extracted {

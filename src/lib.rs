@@ -149,8 +149,11 @@ pub struct Scan {
     pub tags: Vec<ChaffTag>,
     /// Totals without hidden entries.
     pub aggs: Aggs,
-    /// Name-based labels for every node (no content).
+    /// The label of every node: from the name, from detection for typed
+    /// files, and from the samples for the rest of a sampled bucket.
     pub labels: Vec<LabelId>,
+    /// Per node: the label is an estimate (`≈`).
+    pub estimated: Vec<bool>,
     /// Detected types of the visible files.
     pub types: HashMap<NodeId, TypeInfo>,
     pub view: View,
@@ -248,7 +251,7 @@ pub fn build(
         let _t = timer("aggregate");
         aggregate::compute(&tree, |id| chaff::is_hidden(&tags, id))
     };
-    let labels: Vec<LabelId> = tree
+    let mut labels: Vec<LabelId> = tree
         .nodes
         .iter()
         .enumerate()
@@ -261,6 +264,7 @@ pub fn build(
                 &mut tree,
                 |id| chaff::is_hidden(&tags, id),
                 &mut cx.detector,
+                detect::Cap::DEFAULT,
             )
         };
         let files: Vec<NodeId> = found.iter().map(|(id, _)| *id).collect();
@@ -269,6 +273,7 @@ pub fn build(
             tree,
             tags,
             aggs,
+            estimated: vec![false; labels.len()],
             labels,
             types: found.into_iter().collect(),
             view,
@@ -303,7 +308,14 @@ pub fn build(
     };
     let detected = {
         let _t = timer("detect");
-        detect::run(&view, &mut tree, &tags, &mut cx.detector)
+        detect::run(
+            &view,
+            &mut tree,
+            &tags,
+            &mut labels,
+            &mut cx.detector,
+            detect::Cap::DEFAULT,
+        )
     };
     if checks_on(opts) {
         let _t = timer("checks");
@@ -341,6 +353,7 @@ pub fn build(
         tags,
         aggs,
         labels,
+        estimated: detected.estimated,
         types: detected.types,
         view,
         template_labels: cx.templates.labels(),

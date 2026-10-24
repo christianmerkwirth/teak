@@ -7,6 +7,7 @@ pub mod ext;
 pub mod magic;
 pub mod magika;
 pub mod names;
+pub mod sample;
 pub mod secret;
 
 /// The fast path: no model.
@@ -64,8 +65,9 @@ pub mod fast {
     }
 }
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use crate::chaff::{ChaffClass, ChaffTag};
 use crate::tree::{Kind, Node, NodeId, Tree};
@@ -507,8 +509,28 @@ pub struct Typed {
     pub info: TypeInfo,
     /// Detection read the content of this file.
     pub read: bool,
+    /// Magika typed this file.
+    pub model: bool,
     /// A secret by name, or a private-key header in the content.
     pub secret: bool,
+}
+
+/// The global cap of content detection (FR-51), with the Magika sub-cap of
+/// Plan A1 (phase-0 report): Magika types the first `model_files` files of
+/// a run, the fast path the rest.
+#[derive(Clone, Copy, Debug)]
+pub struct Cap {
+    pub files: usize,
+    pub time: Duration,
+    pub model_files: usize,
+}
+
+impl Cap {
+    pub const DEFAULT: Cap = Cap {
+        files: 5_000,
+        time: Duration::from_secs(2),
+        model_files: 300,
+    };
 }
 
 /// Types files: stat → names → (Magika | magic bytes) → extension. Content
@@ -517,6 +539,12 @@ pub struct Typed {
 pub struct Detector {
     pub mode: DetectMode,
     model: magika::Model,
+    cap: Cap,
+    start: Instant,
+    /// Files whose content this run read.
+    typed: usize,
+    /// Files that Magika typed in this run.
+    model_used: usize,
 }
 
 impl Detector {
@@ -524,7 +552,46 @@ impl Detector {
         Detector {
             mode,
             model: magika::Model::new(),
+            cap: Cap::DEFAULT,
+            start: Instant::now(),
+            typed: 0,
+            model_used: 0,
         }
+    }
+
+    /// Starts the cap for one root.
+    pub fn begin(&mut self, cap: Cap) {
+        self.cap = cap;
+        self.start = Instant::now();
+        self.typed = 0;
+        self.model_used = 0;
+    }
+
+    /// True when the cap is reached: no more content reads.
+    pub fn capped(&self) -> bool {
+        self.typed >= self.cap.files || self.start.elapsed() >= self.cap.time
+    }
+
+    /// Types one file within the cap. After the cap, a file whose type
+    /// needs its content gets the extension label, marked as estimated.
+    pub fn type_capped(&mut self, tree: &Tree, id: NodeId) -> Typed {
+        if self.mode != DetectMode::Off && self.capped() && sample::needs_content(tree, id) {
+            let node = tree.node(id);
+            let name = tree.name(id);
+            let mut info = TypeInfo::new(name_label(node, name), Source::Ext);
+            info.estimated = true;
+            return Typed {
+                info,
+                read: false,
+                model: false,
+                secret: secret::is_secret(name, None),
+            };
+        }
+        let use_model = self.model_used < self.cap.model_files;
+        let t = self.type_file(tree, id, use_model);
+        self.typed += usize::from(t.read);
+        self.model_used += usize::from(t.model);
+        t
     }
 
     /// Types one file. `use_model` lets Magika run (with `--detect full`).
@@ -533,6 +600,7 @@ impl Detector {
         let done = |info: TypeInfo| Typed {
             info,
             read: false,
+            model: false,
             secret: false,
         };
         if let Some(l) = stat_label(&node) {
@@ -578,6 +646,7 @@ impl Detector {
             return Typed {
                 info,
                 read: true,
+                model: true,
                 secret: secret::is_secret(name, Some(&m.head)),
             };
         }
@@ -585,6 +654,7 @@ impl Detector {
         Typed {
             info: fast_only(name, head.as_deref()),
             read: head.is_some(),
+            model: false,
             secret: secret::is_secret(name, head.as_deref()),
         }
     }
@@ -618,14 +688,46 @@ pub struct Detected {
     /// Text files with their own row (or named in a chaff line) whose
     /// content detection read: the files for the content checks (FR-42).
     pub read_text: Vec<NodeId>,
+    /// Per node: the label is an estimate (from a sample, or the extension
+    /// after the cap).
+    pub estimated: Vec<bool>,
 }
 
-/// Types the files of the visible rows, and marks secrets. Files that are
-/// boilerplate by name and named in a chaff line get typed too, so the
+/// The subtrees whose type mix shows in a row: closed directories and the
+/// entries of overflow rows.
+fn folded_nodes(view: &View) -> Vec<NodeId> {
+    let mut out = Vec::new();
+    for row in &view.rows {
+        match &row.kind {
+            RowKind::Summary { node, joined, .. } => {
+                out.push(joined.last().copied().unwrap_or(*node))
+            }
+            RowKind::Overflow { nodes, .. } => out.extend_from_slice(nodes),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Types the files of the visible rows, then samples of the folded
+/// directories (FR-50), within the cap (FR-51). Marks secrets. Files that
+/// are boilerplate by name and named in a chaff line get typed too, so the
 /// template check can label them.
-pub fn run(view: &View, tree: &mut Tree, tags: &[ChaffTag], det: &mut Detector) -> Detected {
+///
+/// `labels` holds the name labels on entry; on return, every typed file has
+/// its detected label and every file of a sampled bucket the label of its
+/// samples.
+pub fn run(
+    view: &View,
+    tree: &mut Tree,
+    tags: &[ChaffTag],
+    labels: &mut [LabelId],
+    det: &mut Detector,
+    cap: Cap,
+) -> Detected {
+    det.begin(cap);
     let mut ids: Vec<NodeId> = Vec::new();
-    let mut entries = std::collections::HashSet::new();
+    let mut entries = HashSet::new();
     for row in &view.rows {
         match &row.kind {
             RowKind::Entry { node, .. } if !tree.node(*node).is_dir() => {
@@ -656,35 +758,89 @@ pub fn run(view: &View, tree: &mut Tree, tags: &[ChaffTag], det: &mut Detector) 
     }
     let mut types = HashMap::new();
     let mut read_text = Vec::new();
-    for id in ids {
-        let t = det.type_file(tree, id, true);
+    let mut estimated = vec![false; tree.len()];
+    let mut mark = |tree: &mut Tree, id: NodeId, t: &Typed| {
         if t.secret {
             tree.nodes[id as usize].flags |= crate::tree::flag::SECRET;
         }
+        labels[id as usize] = t.info.label;
+        estimated[id as usize] = t.info.estimated;
+    };
+    for id in ids {
+        let t = det.type_capped(tree, id);
+        mark(tree, id, &t);
         if t.read && t.info.is_text && entries.contains(&id) {
             read_text.push(id);
         }
         types.insert(id, t.info);
     }
-    Detected { types, read_text }
+    if det.mode != DetectMode::Off {
+        let folded = folded_nodes(view);
+        let hidden = |id: NodeId| crate::chaff::is_hidden(tags, id);
+        let mut sampled: HashMap<NodeId, LabelId> = HashMap::new();
+        let mut votes: HashMap<(NodeId, u64), Vec<LabelId>> = HashMap::new();
+        for id in sample::plan(tree, &folded, sample::K, hidden) {
+            if det.capped() {
+                break;
+            }
+            let t = det.type_capped(tree, id);
+            mark(tree, id, &t);
+            sampled.insert(id, t.info.label);
+            if let Some(key) = sample::bucket(tree, id) {
+                votes.entry(key).or_default().push(t.info.label);
+            }
+        }
+        sample::for_each_member(tree, &folded, &hidden, |id| {
+            if sampled.contains_key(&id) {
+                return;
+            }
+            estimated[id as usize] = true;
+            if let Some(v) = sample::bucket(tree, id).and_then(|key| votes.get(&key)) {
+                labels[id as usize] = majority(v);
+            }
+        });
+    }
+    Detected {
+        types,
+        read_text,
+        estimated,
+    }
 }
 
-/// `--mismatches`: types every regular file that is not hidden, and gives
-/// the mismatched ones in path order.
+/// The most common label; a tie goes to the label sampled first.
+fn majority(labels: &[LabelId]) -> LabelId {
+    let mut best = (0, labels[0]);
+    for &l in labels {
+        let n = labels.iter().filter(|&&m| m == l).count();
+        if n > best.0 {
+            best = (n, l);
+        }
+    }
+    best.1
+}
+
+/// `--mismatches`: types every regular file that is not hidden, within the
+/// cap (Magika for all of them, not only the first 300), and gives the
+/// mismatched ones in path order.
 pub fn mismatched(
     tree: &mut Tree,
     hidden: impl Fn(NodeId) -> bool,
     det: &mut Detector,
+    cap: Cap,
 ) -> Vec<(NodeId, TypeInfo)> {
+    det.begin(Cap {
+        model_files: cap.files,
+        ..cap
+    });
     let mut out = Vec::new();
     let mut id: NodeId = 0;
-    while (id as usize) < tree.len() {
+    while (id as usize) < tree.len() && !det.capped() {
         if hidden(id) {
             id = tree.node(id).end;
             continue;
         }
         if tree.node(id).kind == Kind::File {
-            let t = det.type_file(tree, id, true);
+            let t = det.type_capped(tree, id);
             if t.secret {
                 tree.nodes[id as usize].flags |= crate::tree::flag::SECRET;
             }
