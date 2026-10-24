@@ -476,6 +476,12 @@ impl Cx<'_> {
             }
             cells.ty = ty;
             cells.ty_short = ty_short;
+            // teak could not list it: the content is not known, not empty.
+            if tree.node(tail).has(flag::NO_ACCESS) {
+                cells.count.clear();
+                cells.ty.clear();
+                cells.ty_short.clear();
+            }
             cells.age = self.age(if agg.newest == i64::MIN {
                 n.mtime_ns
             } else {
