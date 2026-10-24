@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, ${{ matrix.features || 'default' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        features: ["", "--no-default-features", "--features test-hooks"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.features }}
+      - run: cargo test --locked ${{ matrix.features }}
+
+  checks:
+    name: checks (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets --features test-hooks -- -D warnings
+      # FR-10: no HTTP client or telemetry crate in the normal dependency graph.
+      # ort-sys downloads ONNX Runtime at build time; its ureq is a build dependency.
+      - name: No network crates in the default build
+        run: |
+          cargo tree --locked -e normal --prefix none > deps.txt
+          if grep -Ei '^(reqwest|ureq|hyper|curl|isahc|attohttpc|surf|sentry|opentelemetry)[a-z_-]* v' deps.txt; then
+            echo "network crate in the normal dependency graph" >&2
+            exit 1
+          fi
+      - name: Release binary size
+        run: |
+          cargo build --locked --release
+          cargo build --locked --release --no-default-features --target-dir target/no-magika
+          on=$(wc -c < target/release/teak)
+          off=$(wc -c < target/no-magika/release/teak)
+          {
+            echo "### Release binary size ($(uname -sm))"
+            echo "| build | bytes | MiB |"
+            echo "|---|---:|---:|"
+            echo "| magika | $on | $(awk "BEGIN { printf \"%.1f\", $on / 1048576 }") |"
+            echo "| no magika | $off | $(awk "BEGIN { printf \"%.1f\", $off / 1048576 }") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          target/release/teak --version
+          target/no-magika/release/teak --version

@@ -28,6 +28,15 @@ libc = "0.2"
 serde_json = "1"
 tempfile = "3"
 
+[[bench]]
+name = "walk"
+harness = false
+
+[[bench]]
+name = "magika"
+harness = false
+required-features = ["magika"]
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
