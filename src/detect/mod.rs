@@ -4,6 +4,17 @@
 //! `txt`), so the fast and full paths give the same words.
 
 pub mod ext;
+pub mod secret;
+
+/// The fast path: no model.
+pub mod fast {
+    use super::{Source, TypeInfo, label_id};
+
+    /// The type from the name and the first bytes.
+    pub fn type_of(_name: &[u8], _head: Option<&[u8]>) -> TypeInfo {
+        TypeInfo::new(label_id("unknown"), Source::None)
+    }
+}
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
