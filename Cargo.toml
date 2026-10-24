@@ -44,6 +44,10 @@ zstd = { version = "0.14.3", default-features = false }
 
 [dev-dependencies]
 criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
+# `examples/gen_assets.rs`: completions and the man page from the clap
+# definitions (FR-69).
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
 insta = "1.49.0"
 # FR-64: the JSON output against schema/teak.schema.json. No remote $ref
 # resolution, so no HTTP client.
