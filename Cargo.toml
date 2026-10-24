@@ -17,16 +17,29 @@ magika = ["dep:magika", "dep:ort"]
 test-hooks = ["dep:serde_json"]
 
 [dependencies]
+clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
+globset = "0.4.20"
+ignore = "0.4"
+infer = "0.22.0"
+lscolors = "0.21.0"
 magika = { version = "1.1.0", optional = true }
 ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = ["download-binaries", "tls-rustls"] }
+rustix = { version = "1.1.5", features = ["fs"] }
 serde_json = { version = "1", optional = true }
+smallvec = "1.16.4"
+terminal_size = "0.4.4"
+unicode-width = "0.2.2"
 
 [dev-dependencies]
 criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
-ignore = "0.4"
+insta = "1.49.0"
 libc = "0.2"
+portable-pty = "0.9.0"
+proptest = "1.12.0"
+regex = "1.13.1"
 serde_json = "1"
 tempfile = "3"
+unicode-width = "0.2.2"
 
 [[bench]]
 name = "walk"

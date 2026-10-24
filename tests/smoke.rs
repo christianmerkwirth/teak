@@ -37,18 +37,6 @@ fn model_name() -> &'static str {
     unreachable!()
 }
 
-#[test]
-fn other_calls_are_not_implemented_yet() {
-    let fx = Fixture::new();
-    let out = teak(&fx, &["."]);
-    assert_eq!(out.status.code(), Some(2));
-    assert_eq!(
-        String::from_utf8(out.stderr).unwrap(),
-        "teak: not implemented yet\n"
-    );
-    assert!(out.stdout.is_empty());
-}
-
 fn ten_kib() -> Vec<u8> {
     (0..10 * 1024).map(|i| (i % 251) as u8).collect()
 }

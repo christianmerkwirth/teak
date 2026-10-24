@@ -76,20 +76,289 @@ impl Fixture {
             .expect("set mtime");
         self
     }
+
+    /// Writes a file of `len` bytes. Above 64 KiB the file is sparse, so
+    /// large sizes cost no disk space.
+    pub fn sized(&self, path: &str, len: u64) -> &Self {
+        let p = self.at(path);
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent).expect("create parent dirs");
+        }
+        let f = fs::File::create(&p).expect("create file");
+        if len <= 64 * 1024 {
+            use std::io::Write;
+            (&f).write_all(&vec![b'x'; len as usize])
+                .expect("write file");
+        } else {
+            f.set_len(len).expect("set file length");
+        }
+        self
+    }
+
+    /// Sets the mtime of every entry below the root (not the root itself)
+    /// to `secs` seconds before `SCAN_TIME`. Symlinks are left out.
+    pub fn mtime_all(&self, secs_before_scan: u64) -> &Self {
+        fn walk(dir: &Path, t: std::time::SystemTime) {
+            for entry in fs::read_dir(dir).expect("read dir") {
+                let path = entry.expect("dir entry").path();
+                let meta = fs::symlink_metadata(&path).expect("lstat");
+                if meta.file_type().is_symlink() {
+                    continue;
+                }
+                if meta.is_dir() {
+                    walk(&path, t);
+                }
+                if meta.is_dir() || meta.is_file() {
+                    fs::File::open(&path)
+                        .and_then(|f| f.set_modified(t))
+                        .expect("set mtime");
+                }
+            }
+        }
+        walk(
+            self.path(),
+            UNIX_EPOCH + Duration::from_secs(SCAN_TIME - secs_before_scan),
+        );
+        self
+    }
+
+    /// The absolute path of `path` in the fixture.
+    pub fn abs(&self, path: &str) -> PathBuf {
+        self.at(path)
+    }
 }
 
-/// Runs the teak binary with a fixed scan time.
-///
-/// Task-2 adds the default flags `--format plain --width 120 --color never`.
-pub fn teak(fixture: &Fixture, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_teak"))
-        .args(args)
-        .current_dir(fixture.path())
+/// The flags of the shared test conditions. Later flags override them.
+pub const DEFAULT_FLAGS: &[&str] = &["--format", "plain", "--width", "120", "--color", "never"];
+
+/// A teak command with a fixed scan time and a clean environment, in `dir`.
+pub fn command(dir: &Path) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_teak"));
+    cmd.current_dir(dir)
         .env("SOURCE_DATE_EPOCH", SCAN_TIME.to_string())
         .env_remove("TEAK_TEST_REPORT")
         .env_remove("TEAK_TEST_READ_DELAY_MS")
+        .env_remove("NO_COLOR")
+        .env_remove("CLICOLOR_FORCE")
+        .env_remove("LS_COLORS")
+        .env_remove("COLUMNS")
+        .env_remove("LINES");
+    cmd
+}
+
+/// Runs the teak binary in the fixture, with only the given flags.
+pub fn teak(fixture: &Fixture, args: &[&str]) -> Output {
+    command(fixture.path())
+        .args(args)
         .output()
         .expect("run teak")
+}
+
+/// The result of one teak run, as text.
+#[derive(Debug)]
+pub struct Run {
+    pub code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+impl Run {
+    pub fn from_output(out: Output) -> Run {
+        Run {
+            code: out.status.code(),
+            stdout: String::from_utf8(out.stdout).expect("stdout is UTF-8"),
+            stderr: String::from_utf8(out.stderr).expect("stderr is UTF-8"),
+        }
+    }
+
+    pub fn lines(&self) -> Vec<&str> {
+        self.stdout.lines().collect()
+    }
+
+    pub fn stderr_lines(&self) -> Vec<&str> {
+        self.stderr.lines().collect()
+    }
+
+    /// The first row whose name cell starts with `name`.
+    pub fn row(&self, name: &str) -> Option<&str> {
+        self.stdout.lines().find(|l| {
+            let rest = strip_glyphs(l);
+            rest.starts_with(name) && rest[name.len()..].chars().next().is_none_or(|c| c == ' ')
+        })
+    }
+
+    /// Like [`Run::row`], but panics with the output when there is no row.
+    pub fn must_row(&self, name: &str) -> &str {
+        self.row(name)
+            .unwrap_or_else(|| panic!("no row for {name:?} in:\n{}", self.stdout))
+    }
+
+    /// The cells of the row for `name` (see [`cells`]).
+    pub fn cells(&self, name: &str) -> Vec<&str> {
+        cells(self.must_row(name))
+    }
+
+    pub fn header(&self) -> &str {
+        self.stdout.lines().next().expect("a header line")
+    }
+
+    pub fn footer(&self) -> &str {
+        self.stdout.lines().last().expect("a footer line")
+    }
+}
+
+/// Runs teak in the fixture with the shared test flags, then `args`.
+pub fn run(fixture: &Fixture, args: &[&str]) -> Run {
+    run_in(fixture.path(), args)
+}
+
+/// Runs teak in `dir` with the shared test flags, then `args`.
+pub fn run_in(dir: &Path, args: &[&str]) -> Run {
+    Run::from_output(
+        command(dir)
+            .args(DEFAULT_FLAGS)
+            .args(args)
+            .output()
+            .expect("run teak"),
+    )
+}
+
+/// The tree glyph columns at the start of a row, Unicode or ASCII.
+const GLYPHS: &[&str] = &["├── ", "└── ", "│   ", "|-- ", "`-- ", "|   ", "    "];
+
+/// The row text after the tree glyphs.
+pub fn strip_glyphs(line: &str) -> &str {
+    let mut rest = line;
+    'outer: loop {
+        for g in GLYPHS {
+            if let Some(r) = rest.strip_prefix(g) {
+                rest = r;
+                continue 'outer;
+            }
+        }
+        return rest;
+    }
+}
+
+/// The depth of a row: the number of glyph columns before its name.
+pub fn depth(line: &str) -> usize {
+    let rest = strip_glyphs(line);
+    (line.chars().count() - rest.chars().count()) / 4
+}
+
+/// The cells of a row: the text after the glyphs, split on runs of two or
+/// more spaces. Empty cells do not show up.
+pub fn cells(line: &str) -> Vec<&str> {
+    strip_glyphs(line)
+        .split("  ")
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .collect()
+}
+
+/// The display width of a line.
+pub fn width(line: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(line)
+}
+
+/// Strips ANSI SGR sequences.
+pub fn strip_ansi(text: &str) -> String {
+    let re = regex::Regex::new("\x1b\\[[0-9;]*m").unwrap();
+    re.replace_all(text, "").into_owned()
+}
+
+/// Runs teak in a pseudo-terminal with `rows` × `cols`. Returns stdout and
+/// stderr together, with `\r\n` turned into `\n`.
+pub fn run_pty(dir: &Path, args: &[&str], rows: u16, cols: u16, env: &[(&str, &str)]) -> String {
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+    use std::io::Read;
+
+    let pair = native_pty_system()
+        .openpty(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .expect("open pty");
+    let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_teak"));
+    cmd.args(args);
+    cmd.cwd(dir);
+    cmd.env("SOURCE_DATE_EPOCH", SCAN_TIME.to_string());
+    for var in [
+        "NO_COLOR",
+        "CLICOLOR_FORCE",
+        "LS_COLORS",
+        "COLUMNS",
+        "LINES",
+    ] {
+        cmd.env_remove(var);
+    }
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let mut child = pair.slave.spawn_command(cmd).expect("spawn in pty");
+    drop(pair.slave);
+    let mut reader = pair.master.try_clone_reader().expect("pty reader");
+    let mut bytes = Vec::new();
+    // The read ends with EIO when the child closes the pty.
+    let mut buf = [0u8; 4096];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => bytes.extend_from_slice(&buf[..n]),
+        }
+    }
+    child.wait().expect("wait for teak");
+    String::from_utf8(bytes)
+        .expect("pty output is UTF-8")
+        .replace("\r\n", "\n")
+}
+
+/// Runs teak and kills it after `limit`. Returns `None` on a timeout.
+pub fn run_with_timeout(dir: &Path, args: &[&str], limit: Duration) -> Option<Run> {
+    use std::process::Stdio;
+    use std::time::Instant;
+
+    let mut child = command(dir)
+        .args(DEFAULT_FLAGS)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn teak");
+    let start = Instant::now();
+    loop {
+        if child.try_wait().expect("poll teak").is_some() {
+            return Some(Run::from_output(child.wait_with_output().unwrap()));
+        }
+        if start.elapsed() > limit {
+            child.kill().ok();
+            child.wait().ok();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// True when the tests run as root (mode-000 checks do not work then).
+pub fn is_root() -> bool {
+    // SAFETY: getuid has no preconditions.
+    unsafe { libc::getuid() == 0 }
+}
+
+/// Runs teak with `TEAK_TEST_REPORT` set and returns the run and the report.
+#[cfg(feature = "test-hooks")]
+pub fn run_report(dir: &Path, args: &[&str]) -> (Run, Report) {
+    let report_dir = tempfile::tempdir().expect("report dir");
+    let report = report_dir.path().join("report.json");
+    let out = command(dir)
+        .args(DEFAULT_FLAGS)
+        .args(args)
+        .env("TEAK_TEST_REPORT", &report)
+        .output()
+        .expect("run teak");
+    (Run::from_output(out), read_report(&report))
 }
 
 /// The parsed `TEAK_TEST_REPORT` file.
