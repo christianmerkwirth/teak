@@ -4,6 +4,7 @@ pub mod gitattributes;
 pub mod gitignore;
 pub mod packs;
 pub mod rules;
+pub mod templates;
 
 use crate::tree::{Kind, NONE, NodeId, ROOT, Tree, flag};
 

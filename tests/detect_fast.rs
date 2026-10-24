@@ -82,7 +82,13 @@ fn fr48_detect_off_reads_no_content() {
 fn fr48_fast_reads_one_small_head_per_visible_file() {
     let fx = types_fixture();
     fx.sized("big.dat", 10_000);
-    let (_, report) = support::run_report(fx.path(), &["--detect", "fast"]);
+    // The content checks (task-3) read text files again; this test is about
+    // detection alone.
+    let (_, report) = support::run_report_env(
+        fx.path(),
+        &["--detect", "fast"],
+        &[("TEAK_TEST_NO_CONTENT_CHECKS", "1")],
+    );
     // Paths are as teak opens them: below the root `.`.
     assert_eq!(
         report.reads.get("./big.dat"),

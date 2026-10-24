@@ -380,6 +380,14 @@ pub fn corpus(name: &str) -> Vec<u8> {
     fs::read(corpus_dir().join(name)).unwrap_or_else(|e| panic!("corpus file {name}: {e}"))
 }
 
+/// The built-in MIT template, filled in with a year and a holder.
+pub fn mit_license(year: u32, holder: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("templates/boilerplate/MIT.txt");
+    fs::read_to_string(path)
+        .expect("MIT template")
+        .replace("[year] [fullname]", &format!("{year} {holder}"))
+}
+
 /// True when the tests run as root (mode-000 checks do not work then).
 pub fn is_root() -> bool {
     // SAFETY: getuid has no preconditions.

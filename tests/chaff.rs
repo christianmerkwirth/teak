@@ -1,5 +1,5 @@
 //! Chaff: classes, rule order, the chaff line, and its controls (FR-20,
-//! FR-30 to FR-37). `LICENSE (MIT)` needs the template table (task-3).
+//! FR-30 to FR-37).
 
 mod support;
 
@@ -31,6 +31,7 @@ fn class_fixture() -> Fixture {
         .file("app.min.js", "var a=1;\n")
         .file(".editorconfig", "root = true\n")
         .file(".gitkeep", "")
+        .file("LICENSE", support::mit_license(2026, "Jane Doe"))
         .file("src/main.rs", "fn main() {}\n");
     fx
 }
@@ -49,6 +50,7 @@ fn fr30_every_class_has_its_entry_and_action() {
         ("api.pb.go", ChaffClass::Generated),
         ("app.min.js", ChaffClass::Minified),
         (".editorconfig", ChaffClass::Boilerplate),
+        ("LICENSE", ChaffClass::Boilerplate),
         (".gitkeep", ChaffClass::Empty),
     ];
     for (rel, class) in want {
@@ -65,6 +67,7 @@ fn fr30_every_class_has_its_entry_and_action() {
         "api.pb.go",
         "app.min.js",
         ".editorconfig",
+        "LICENSE",
         ".gitkeep",
     ] {
         assert!(items.contains(&node(&s, rel)), "{rel} in the chaff line");
@@ -145,6 +148,7 @@ fn big_chaff_fixture() -> Fixture {
         .sized("node_modules/pkg/blob.bin", 180 << 20)
         .sized("target/release/app", 1229 << 20)
         .file("Cargo.lock", "# lock\n")
+        .file("LICENSE", support::mit_license(2026, "Jane Doe"))
         .file("src/main.rs", "fn main() {}\n");
     for e in ["e1", "e2", "e3", "e4"] {
         fx.file(e, "");
@@ -167,6 +171,7 @@ fn fr33_one_chaff_line_large_first_then_names_then_more() {
     let n = line.find("node_modules/ 180M").expect(line);
     assert!(t < n, "{line}");
     assert!(line.contains("Cargo.lock"), "{line}");
+    assert!(line.contains("LICENSE (MIT)"), "{line}");
     assert!(line.ends_with("+4"), "{line}");
 }
 
