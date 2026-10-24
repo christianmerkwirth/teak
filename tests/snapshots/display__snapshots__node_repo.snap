@@ -5,7 +5,7 @@ expression: "view(&fx, \"noderepo\", &[])"
 noderepo/  553K · 226 files · node pkg
 ├── ▪ chaff  node_modules/ 553K 220 · dist/ · package-lock.json
 ├── src/          45  2  typescript  1w
-│   ├── app.tsx   25     typescript  1w
-│   └── index.ts  20     typescript  1w
-└── package.json  21     json        1w
+│   ├── app.tsx   25     typescript  1w  export function App() {}
+│   └── index.ts  20     typescript  1w  export const a = 1;
+└── package.json  21     json        1w  {name}
 ── 7 of 40 lines · 226 files · folded 222 (vendor 220 · build 1 · lock 1) · hidden 1 (dotfile 1)

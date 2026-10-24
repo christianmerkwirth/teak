@@ -5,10 +5,10 @@ expression: out
 odd/  35 · 7 files
 ├── locked/     0           5h            ⊘
 ├── dead        7  symlink  0s            ⇢ nowhere (broken)
-├── plain.txt   2  txt      5h
-├── run.sh     10  shell    5h  rwx
+├── plain.txt   2  txt      5h                                p
+├── run.sh     10  shell    5h  rwx                           #!/bin/sh
 ├── self        4  symlink  0s            ⇢ self (broken)
-├── setuid      1  txt      5h  rwx,suid
+├── setuid      1  txt      5h  rwx,suid                      x
 ├── to_plain    9  symlink  0s            ⇢ plain.txt
-└── world.txt   2  txt      5h  o+w
+└── world.txt   2  txt      5h  o+w                           w
 ── 10 of 40 lines · 7 files

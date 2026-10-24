@@ -13,6 +13,7 @@ pub mod git;
 pub mod io;
 pub mod kind;
 pub mod layout;
+pub mod preview;
 pub mod render;
 pub mod salience;
 pub mod select;
@@ -173,6 +174,8 @@ pub struct Scan {
     /// Git status, when the root is in a repo and `--no-git` is off.
     pub git: Option<git::GitStatus>,
     pub git_head: Option<git::GitHead>,
+    /// The previews of the visible files (FR-56).
+    pub previews: HashMap<NodeId, String>,
 }
 
 impl Scan {
@@ -342,6 +345,7 @@ pub fn build(
             kinds,
             git,
             git_head,
+            previews: HashMap::new(),
         });
     }
     let mut view = {
@@ -436,6 +440,10 @@ pub fn build(
         select::apply_content(&mut view, &tree, &aggs, &tags, &moved);
     }
     let kinds = project_kinds(&tree, &labels, opts, git_head.is_some());
+    let previews = {
+        let _t = timer("preview");
+        previews(&view, &tree, &detected, opts)
+    };
     Ok(Scan {
         tree,
         tags,
@@ -448,7 +456,47 @@ pub fn build(
         kinds,
         git,
         git_head,
+        previews,
     })
+}
+
+/// The previews of the file rows. A file typed from the cache has no head,
+/// so the preview reads one (counted as a preview read). No previews with
+/// `--preview off` or `--detect off` (no content reads).
+fn previews(
+    view: &View,
+    tree: &Tree,
+    detected: &detect::Detected,
+    opts: &Opts,
+) -> HashMap<NodeId, String> {
+    let mut out = HashMap::new();
+    if opts.preview == layout::PreviewMode::Off || opts.detect == detect::DetectMode::Off {
+        return out;
+    }
+    for row in &view.rows {
+        let view::RowKind::Entry { node, .. } = row.kind else {
+            continue;
+        };
+        let Some(info) = detected.types.get(&node) else {
+            continue;
+        };
+        let read;
+        let head = match detected.heads.get(&node) {
+            Some(h) => h.as_slice(),
+            None if detected.cache_hits.contains(&node) => {
+                let Ok(h) = io::read_preview(&tree.path(node), 0, detect::HEAD_MAX) else {
+                    continue;
+                };
+                read = h;
+                read.as_slice()
+            }
+            None => continue,
+        };
+        if let Some(p) = preview::of(tree, node, info, head) {
+            out.insert(node, p);
+        }
+    }
+    out
 }
 
 /// The project kinds of the root. The EXIF check reads image heads, so it

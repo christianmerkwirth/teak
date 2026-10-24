@@ -574,11 +574,34 @@ impl Cx<'_> {
                 cells.ty = ty;
             }
             cells.age = self.age(n.mtime_ns);
-            if n.has(flag::SECRET) && self.opts.preview != PreviewMode::Off {
-                cells.preview = "no preview (secret)".to_string();
+            if self.opts.preview != PreviewMode::Off {
+                if n.has(flag::SECRET) {
+                    cells.preview = "no preview (secret)".to_string();
+                } else if let Some(p) = self.scan.previews.get(&node) {
+                    cells.preview = self.preview_text(p);
+                }
             }
         }
         cells
+    }
+
+    /// A preview in the glyph set, cut to [`SHORT_PREVIEW`] columns with
+    /// `--preview short`. `full` keeps it whole; the line cut ends it.
+    fn preview_text(&self, text: &str) -> String {
+        let g = self.opts.glyphs;
+        let text = if std::ptr::eq(g, &ASCII) {
+            text.replace('→', "->")
+                .replace('×', "x")
+                .replace('≈', "~")
+                .replace('…', "...")
+        } else {
+            text.to_string()
+        };
+        if self.opts.preview == PreviewMode::Short {
+            cut_end(&text, SHORT_PREVIEW, g.ellipsis)
+        } else {
+            text
+        }
     }
 
     /// `html ⚠ ext says pdf` (FR-53).
@@ -951,7 +974,9 @@ impl Cx<'_> {
             perms: some(perms),
             flags: some(flags),
             git: some(git),
-            preview: some(preview),
+            // The preview is the last cell, and the line cut ends a long
+            // one: it needs no more room than a short preview to stay.
+            preview: some(preview.min(SHORT_PREVIEW)),
         };
         let width = self.opts.width;
         let others = |p: &ColumnPlan| {
@@ -1061,6 +1086,29 @@ impl Cx<'_> {
         trim_end(&mut spans);
         Line { spans, dim }
     }
+}
+
+/// The width of a preview with `--preview short`.
+const SHORT_PREVIEW: usize = 40;
+
+/// Cuts `text` to `width` columns, with `ellipsis` at the end of a cut.
+fn cut_end(text: &str, width: usize, ellipsis: &str) -> String {
+    if text.width() <= width {
+        return text.to_string();
+    }
+    let room = width.saturating_sub(ellipsis.width());
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in text.chars() {
+        let w = ch.width().unwrap_or(0);
+        if used + w > room {
+            break;
+        }
+        used += w;
+        out.push(ch);
+    }
+    out.push_str(ellipsis);
+    out
 }
 
 /// Drops trailing spaces and empty spans.

@@ -67,6 +67,23 @@ pub fn read_each(path: &Path, mut f: impl FnMut(&[u8])) -> io::Result<u64> {
     Ok(total)
 }
 
+/// Reads at most `len` bytes of `path` from `offset`, for a preview: after
+/// a type-cache hit, or for an image header or a zip directory. The hooks
+/// count these reads apart from detection reads (`preview_reads`).
+///
+/// The caller makes sure that `path` is a regular file and not on a pseudo
+/// file system.
+pub fn read_preview(path: &Path, offset: u64, len: usize) -> io::Result<Vec<u8>> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = File::open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut buf = Vec::new();
+    file.take(len as u64).read_to_end(&mut buf)?;
+    #[cfg(feature = "test-hooks")]
+    hooks::count_preview_read(path, buf.len() as u64);
+    Ok(buf)
+}
+
 /// Reads a rule file (`.gitignore`, `.gitattributes`) of at most `max`
 /// bytes. Rule files steer the walk; they are not content, so the hooks do
 /// not count them (FR-52 counts content reads only).
@@ -151,6 +168,7 @@ pub mod hooks {
     static READS: Mutex<BTreeMap<PathBuf, u64>> = Mutex::new(BTreeMap::new());
     static STAGES: Mutex<BTreeMap<&'static str, f64>> = Mutex::new(BTreeMap::new());
     static COUNTS: Mutex<BTreeMap<&'static str, u64>> = Mutex::new(BTreeMap::new());
+    static PREVIEW_READS: Mutex<BTreeMap<PathBuf, u64>> = Mutex::new(BTreeMap::new());
 
     /// Adds one to `counts[name]`, for example `magika` per Magika call.
     pub fn count(name: &'static str) {
@@ -160,6 +178,11 @@ pub mod hooks {
 
     pub(crate) fn count_read(path: &Path, bytes: u64) {
         let mut reads = READS.lock().unwrap_or_else(|e| e.into_inner());
+        *reads.entry(path.to_path_buf()).or_default() += bytes;
+    }
+
+    pub(crate) fn count_preview_read(path: &Path, bytes: u64) {
+        let mut reads = PREVIEW_READS.lock().unwrap_or_else(|e| e.into_inner());
         *reads.entry(path.to_path_buf()).or_default() += bytes;
     }
 
@@ -199,8 +222,8 @@ pub mod hooks {
         }
     }
 
-    /// Writes `{"reads": {...}, "stages_ms": {...}, "counts": {...}}` to
-    /// `TEAK_TEST_REPORT`, if set.
+    /// Writes `{"reads": {...}, "stages_ms": {...}, "counts": {...},
+    /// "preview_reads": {...}}` to `TEAK_TEST_REPORT`, if set.
     pub fn write_report() {
         let Some(path) = std::env::var_os("TEAK_TEST_REPORT") else {
             return;
@@ -223,7 +246,18 @@ pub mod hooks {
             .iter()
             .map(|(s, n)| (s.to_string(), (*n).into()))
             .collect();
-        let report = serde_json::json!({ "reads": reads, "stages_ms": stages, "counts": counts });
+        let previews: serde_json::Map<_, _> = PREVIEW_READS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .map(|(p, n)| (p.to_string_lossy().into_owned(), (*n).into()))
+            .collect();
+        let report = serde_json::json!({
+            "reads": reads,
+            "stages_ms": stages,
+            "counts": counts,
+            "preview_reads": previews,
+        });
         if let Err(e) = std::fs::write(&path, report.to_string()) {
             eprintln!(
                 "teak: cannot write test report {}: {e}",

@@ -565,6 +565,9 @@ pub struct Detector {
     cache: Option<PendingCache>,
     /// The template table hash and the scan time, for the cache.
     cache_run: (u64, i64),
+    /// The head that the last read gave (at most [`HEAD_MAX`] bytes), for
+    /// the preview.
+    last_head: Option<Vec<u8>>,
 }
 
 impl Detector {
@@ -579,7 +582,13 @@ impl Detector {
             time_up: false,
             cache: None,
             cache_run: (0, 0),
+            last_head: None,
         }
+    }
+
+    /// Takes the head that the last [`Detector::type_capped`] call read.
+    pub fn take_head(&mut self) -> Option<Vec<u8>> {
+        self.last_head.take()
     }
 
     /// Uses a type cache. `templates` is the template table hash; check
@@ -675,6 +684,7 @@ impl Detector {
     /// gets the extension label, marked as estimated.
     /// `need_check`: the content checks will want this file.
     pub fn type_capped(&mut self, tree: &Tree, id: NodeId, need_check: bool) -> Typed {
+        self.last_head = None;
         let n = tree.node(id);
         let reads = self.mode != DetectMode::Off
             && n.kind == Kind::File
@@ -796,6 +806,7 @@ impl Detector {
                 secret: key || secret::is_secret(name, None),
                 cached: None,
             };
+            self.last_head = Some(m.head);
             return (t, key);
         }
         let head = crate::io::read_head(&path, HEAD_MAX).ok();
@@ -807,6 +818,7 @@ impl Detector {
             secret: key || secret::is_secret(name, None),
             cached: None,
         };
+        self.last_head = head;
         (t, key)
     }
 }
@@ -843,6 +855,11 @@ pub struct Detected {
     /// Per node: the label is an estimate (from a sample, or the extension
     /// after the cap).
     pub estimated: Vec<bool>,
+    /// The heads that detection read for the files with their own row, for
+    /// the previews.
+    pub heads: HashMap<NodeId, Vec<u8>>,
+    /// Files with their own row whose type came from the cache: no head.
+    pub cache_hits: HashSet<NodeId>,
 }
 
 /// The subtrees whose type mix shows in a row: closed directories and the
@@ -911,6 +928,8 @@ pub fn run(
     }
     let mut types = HashMap::new();
     let mut checks = Vec::new();
+    let mut heads = HashMap::new();
+    let mut cache_hits = HashSet::new();
     let mut estimated = vec![false; tree.len()];
     let mut mark = |tree: &mut Tree, id: NodeId, t: &Typed| {
         if t.secret {
@@ -926,6 +945,14 @@ pub fn run(
         let checked = entry && matches!(class, None | Some(ChaffClass::Boilerplate));
         let t = det.type_capped(tree, id, checks_on && checked);
         mark(tree, id, &t);
+        if entry {
+            if let Some(head) = det.take_head() {
+                heads.insert(id, head);
+            }
+            if t.cached.is_some() {
+                cache_hits.insert(id);
+            }
+        }
         if (t.read || t.cached.is_some()) && t.info.is_text && checked {
             checks.push((id, t.cached.flatten()));
         }
@@ -968,6 +995,8 @@ pub fn run(
         types,
         checks,
         estimated,
+        heads,
+        cache_hits,
     }
 }
 
