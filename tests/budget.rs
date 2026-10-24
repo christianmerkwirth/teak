@@ -1,4 +1,4 @@
-//! Line budget and selection: FR-11, FR-13 to FR-17, FR-19 (P1), FR-70.
+//! Line budget and selection: FR-11, FR-13 to FR-17, FR-19, FR-70.
 
 mod support;
 
@@ -314,6 +314,22 @@ fn fr19_header_shows_root_size_and_count() {
         "{}",
         out.header()
     );
+}
+
+#[test]
+fn fr19_p3_header_shows_kind_and_git() {
+    let fx = Fixture::new();
+    fx.file("Cargo.toml", "[package]\nname = \"x\"\n")
+        .file("src/main.rs", "fn main() {}\n");
+    support::git_init_commit(&fx);
+    support::git_set_upstream(&fx);
+    support::git_commits(&fx, "src/main.rs", 2);
+    let out = run(&fx, &[]);
+    assert!(out.header().contains("rust crate"), "{}", out.header());
+    assert!(out.header().contains("git main ↑2"), "{}", out.header());
+    // Clean: no changed count, and no `↓0`.
+    assert!(!out.header().contains("changed"), "{}", out.header());
+    assert!(!out.header().contains('↓'), "{}", out.header());
 }
 
 // FR-70: Exit codes

@@ -519,3 +519,76 @@ pub fn chaff_items(scan: &teak::Scan, dir: teak::tree::NodeId) -> Option<Vec<tea
         _ => None,
     })
 }
+
+/// Runs `git` in `dir` with no user or system config and fixed authors.
+/// Panics with the output when git fails.
+pub fn git(dir: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args([
+            "-c",
+            "init.defaultBranch=main",
+            "-c",
+            "core.fsmonitor=false",
+        ])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .env("GIT_AUTHOR_DATE", "2025-06-01T00:00:00Z")
+        .env("GIT_COMMITTER_DATE", "2025-06-01T00:00:00Z")
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// `git init` in the fixture root, and a commit of all files.
+pub fn git_init_commit(fx: &Fixture) {
+    git(fx.path(), &["init", "-q"]);
+    git(fx.path(), &["add", "-A"]);
+    git(fx.path(), &["commit", "-q", "-m", "first"]);
+}
+
+/// Marks the current `HEAD` as `origin/main` and sets it as the upstream
+/// of `main`, as a clone would.
+pub fn git_set_upstream(fx: &Fixture) {
+    let d = fx.path();
+    git(d, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    git(
+        d,
+        &[
+            "config",
+            "remote.origin.url",
+            "https://example.invalid/r.git",
+        ],
+    );
+    git(
+        d,
+        &[
+            "config",
+            "remote.origin.fetch",
+            "+refs/heads/*:refs/remotes/origin/*",
+        ],
+    );
+    git(d, &["config", "branch.main.remote", "origin"]);
+    git(d, &["config", "branch.main.merge", "refs/heads/main"]);
+}
+
+/// Adds `n` commits, each with one more line in `file`.
+pub fn git_commits(fx: &Fixture, file: &str, n: usize) {
+    for i in 0..n {
+        let p = fx.abs(file);
+        let mut text = fs::read_to_string(&p).unwrap_or_default();
+        text.push_str(&format!("line {i}\n"));
+        fs::write(&p, text).expect("write file");
+        git(fx.path(), &["add", file]);
+        git(fx.path(), &["commit", "-q", "-m", &format!("c{i}")]);
+    }
+}

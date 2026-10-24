@@ -222,28 +222,43 @@ struct Marks {
     paths: [std::path::PathBuf; 4],
 }
 
+/// A real repo whose config, hooks, and attributes would run commands: an
+/// fsmonitor, a post-checkout hook, a clean/smudge filter, and a script in
+/// the tree. `src/lib.rs` is modified and `.gitattributes` is untracked, so
+/// git status has work to do.
 fn hostile_repo() -> (Fixture, Marks) {
     let dir = tempfile::tempdir().unwrap();
     let paths = [1, 2, 3, 4].map(|i| dir.path().join(format!("mark{i}")));
     let fx = Fixture::new();
     let sh = |p: &Path| format!("#!/bin/sh\ntouch '{}'\n", p.display());
-    fx.file(
-        ".git/config",
-        format!(
-            "[core]\n\tfsmonitor = touch '{}'\n[filter \"x\"]\n\tclean = touch '{}'\n\tsmudge = touch '{}'\n",
-            paths[0].display(),
-            paths[2].display(),
-            paths[2].display()
-        ),
-    )
-    .file(".git/HEAD", "ref: refs/heads/main\n")
-    .file(".git/hooks/post-checkout", sh(&paths[1]))
-    .mode(".git/hooks/post-checkout", 0o755)
-    .file(".gitattributes", "* filter=x\n")
-    .file("run.sh", sh(&paths[3]))
-    .mode("run.sh", 0o755)
-    .file("src/lib.rs", "pub fn f() {}\n");
+    fx.file("run.sh", sh(&paths[3]))
+        .mode("run.sh", 0o755)
+        .file("src/lib.rs", "pub fn f() {}\n");
+    support::git_init_commit(&fx);
+    let config = fx.abs(".git/config");
+    let mut text = fs::read_to_string(&config).unwrap();
+    text.push_str(&format!(
+        "[core]\n\tfsmonitor = touch '{}'\n[filter \"x\"]\n\tclean = touch '{}'\n\tsmudge = touch '{}'\n\trequired = true\n",
+        paths[0].display(),
+        paths[2].display(),
+        paths[2].display()
+    ));
+    fs::write(&config, text).unwrap();
+    fx.file(".git/hooks/post-checkout", sh(&paths[1]))
+        .mode(".git/hooks/post-checkout", 0o755)
+        .file(".gitattributes", "* filter=x\n")
+        .file("src/lib.rs", "pub fn f() { g(); }\n");
     (fx, Marks { _dir: dir, paths })
+}
+
+/// The git cells are right: `src/lib.rs` is `M`, `.gitattributes` is `?`.
+fn assert_git_cells(out: &support::Run) {
+    let lib = support::cells(out.must_row("lib.rs"));
+    assert!(lib.contains(&"M"), "{}", out.stdout);
+    let attrs = support::cells(out.must_row(".gitattributes"));
+    assert!(attrs.contains(&"?"), "{}", out.stdout);
+    let run_sh = support::cells(out.must_row("run.sh"));
+    assert!(!run_sh.contains(&"M"), "{}", out.stdout);
 }
 
 #[test]
@@ -263,6 +278,7 @@ fn fr76_nothing_from_the_tree_runs() {
             ],
         );
         assert_eq!(out.code, Some(0), "{out:?}");
+        assert_git_cells(&out);
     }
     for m in &marks.paths {
         assert!(!m.exists(), "{} exists", m.display());
