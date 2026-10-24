@@ -559,6 +559,9 @@ pub struct Detector {
     typed: usize,
     /// Files that Magika typed in this run.
     model_used: usize,
+    /// The time cap is reached (checked after each read, and every 64
+    /// cache hits).
+    time_up: bool,
     cache: Option<PendingCache>,
     /// The template table hash and the scan time, for the cache.
     cache_run: (u64, i64),
@@ -573,6 +576,7 @@ impl Detector {
             start: Instant::now(),
             typed: 0,
             model_used: 0,
+            time_up: false,
             cache: None,
             cache_run: (0, 0),
         }
@@ -629,7 +633,9 @@ impl Detector {
             Source::Ext => ext::by_name(name) == Some(hit.label),
             _ => true,
         };
-        if hit.full != full || !fits || (need_check && hit.check.is_none()) {
+        // Only text files get checks; a binary file never has a result.
+        let unchecked = need_check && hit.check.is_none() && label(hit.label).text;
+        if hit.full != full || !fits || unchecked {
             return None;
         }
         let mut info = TypeInfo::new(hit.label, hit.source);
@@ -652,16 +658,21 @@ impl Detector {
         self.start = Instant::now();
         self.typed = 0;
         self.model_used = 0;
+        self.time_up = self.cap.time.is_zero();
     }
 
     /// True when the cap is reached: no more content reads.
     pub fn capped(&self) -> bool {
-        self.typed >= self.cap.files || self.start.elapsed() >= self.cap.time
+        self.typed >= self.cap.files || self.time_up
+    }
+
+    fn check_time(&mut self) {
+        self.time_up = self.start.elapsed() >= self.cap.time;
     }
 
     /// Types one file within the cap, from the cache when it can (a hit
-    /// reads nothing and does not count). After the cap, a file whose type
-    /// needs its content gets the extension label, marked as estimated.
+    /// reads nothing). After the cap, a file whose type needs its content
+    /// gets the extension label, marked as estimated.
     /// `need_check`: the content checks will want this file.
     pub fn type_capped(&mut self, tree: &Tree, id: NodeId, need_check: bool) -> Typed {
         let n = tree.node(id);
@@ -669,10 +680,20 @@ impl Detector {
             && n.kind == Kind::File
             && n.size > 0
             && !n.has(crate::tree::flag::PSEUDO_FS);
-        if reads && let Some(t) = self.cached(tree, id, need_check) {
+        let capped = self.mode != DetectMode::Off && self.capped();
+        // A hit counts toward the cap like a read, so a warm run takes the
+        // same samples as a cold one.
+        if reads
+            && !capped
+            && let Some(t) = self.cached(tree, id, need_check)
+        {
+            self.typed += 1;
+            if self.typed.is_multiple_of(64) {
+                self.check_time();
+            }
             return t;
         }
-        if self.mode != DetectMode::Off && self.capped() && sample::needs_content(tree, id) {
+        if capped && sample::needs_content(tree, id) {
             let node = tree.node(id);
             let name = tree.name(id);
             let mut info = TypeInfo::new(name_label(node, name), Source::Ext);
@@ -690,6 +711,7 @@ impl Detector {
         self.typed += usize::from(t.read);
         self.model_used += usize::from(t.model);
         if t.read {
+            self.check_time();
             let full = self.full();
             let key = Key::of(tree.node(id));
             if let Some(cache) = self.cache() {
@@ -899,9 +921,12 @@ pub fn run(
     };
     for id in ids {
         let entry = entries.contains(&id);
-        let t = det.type_capped(tree, id, checks_on && entry);
+        // The checks look at files with no class, and at boilerplate.
+        let class = tags[id as usize].class;
+        let checked = entry && matches!(class, None | Some(ChaffClass::Boilerplate));
+        let t = det.type_capped(tree, id, checks_on && checked);
         mark(tree, id, &t);
-        if (t.read || t.cached.is_some()) && t.info.is_text && entry {
+        if (t.read || t.cached.is_some()) && t.info.is_text && checked {
             checks.push((id, t.cached.flatten()));
         }
         types.insert(id, t.info);
@@ -909,28 +934,35 @@ pub fn run(
     if det.mode != DetectMode::Off {
         let folded = folded_nodes(view);
         let hidden = |id: NodeId| crate::chaff::is_hidden(tags, id);
-        let mut sampled: HashMap<NodeId, LabelId> = HashMap::new();
-        let mut votes: HashMap<(NodeId, u64), Vec<LabelId>> = HashMap::new();
-        for id in sample::plan(tree, &folded, sample::K, hidden) {
+        let plan = sample::plan(tree, &folded, sample::K, hidden);
+        let mut sampled = vec![false; tree.len()];
+        // At most `K` votes per bucket: (labels, count).
+        let mut votes: Vec<([LabelId; sample::K], usize)> = vec![([0; sample::K], 0); plan.buckets];
+        for &(id, b) in &plan.samples {
             if det.capped() {
                 break;
             }
             let t = det.type_capped(tree, id, false);
             mark(tree, id, &t);
-            sampled.insert(id, t.info.label);
-            if let Some(key) = sample::bucket(tree, id) {
-                votes.entry(key).or_default().push(t.info.label);
+            sampled[id as usize] = true;
+            if let Some((v, n)) = votes.get_mut(b as usize) {
+                v[*n] = t.info.label;
+                *n += 1;
             }
         }
-        sample::for_each_member(tree, &folded, &hidden, |id| {
-            if sampled.contains_key(&id) {
-                return;
+        let winners: Vec<Option<LabelId>> = votes
+            .iter()
+            .map(|(v, n)| (*n > 0).then(|| majority(&v[..*n])))
+            .collect();
+        for &(id, b) in &plan.members {
+            if sampled[id as usize] {
+                continue;
             }
             estimated[id as usize] = true;
-            if let Some(v) = sample::bucket(tree, id).and_then(|key| votes.get(&key)) {
-                labels[id as usize] = majority(v);
+            if let Some(&Some(l)) = winners.get(b as usize) {
+                labels[id as usize] = l;
             }
-        });
+        }
     }
     Detected {
         types,

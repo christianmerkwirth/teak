@@ -1,6 +1,9 @@
 //! Exact name rules: names that say the type with no doubt.
 
+use std::sync::OnceLock;
+
 use super::{LabelId, label_id};
+use crate::fnv::FnvMap;
 
 const NAMES: &[(&str, &str)] = &[
     ("Makefile", "makefile"),
@@ -57,8 +60,18 @@ const NAMES: &[(&str, &str)] = &[
 /// The label for an exact name, or for a name that starts like `Kconfig.`
 /// or `Makefile.` (the kernel and many C trees use those).
 pub fn by_name(name: &[u8]) -> Option<LabelId> {
-    if let Some(&(_, l)) = NAMES.iter().find(|(n, _)| n.as_bytes() == name) {
-        return Some(label_id(l));
+    if !maybe(name) {
+        return None;
+    }
+    static INDEX: OnceLock<FnvMap<&'static [u8], LabelId>> = OnceLock::new();
+    let index = INDEX.get_or_init(|| {
+        NAMES
+            .iter()
+            .map(|(n, l)| (n.as_bytes(), label_id(l)))
+            .collect()
+    });
+    if let Some(&l) = index.get(name) {
+        return Some(l);
     }
     let prefixed = |p: &[u8]| name.len() > p.len() && name.starts_with(p);
     if prefixed(b"Kconfig.") {
@@ -73,4 +86,22 @@ pub fn by_name(name: &[u8]) -> Option<LabelId> {
         return Some(label_id(l));
     }
     None
+}
+
+/// A quick reject: false when no rule can match. Per first byte, a bit
+/// mask of the lengths of the exact names; the prefix rules start with `K`,
+/// `M`, or `D`. Most names in a large tree fail here.
+fn maybe(name: &[u8]) -> bool {
+    static LENGTHS: OnceLock<[u64; 256]> = OnceLock::new();
+    let lengths = LENGTHS.get_or_init(|| {
+        let mut t = [0u64; 256];
+        for (n, _) in NAMES {
+            t[n.as_bytes()[0] as usize] |= 1 << n.len().min(63);
+        }
+        t
+    });
+    let Some(&first) = name.first() else {
+        return false;
+    };
+    lengths[first as usize] & (1 << name.len().min(63)) != 0 || matches!(first, b'K' | b'M' | b'D')
 }

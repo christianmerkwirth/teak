@@ -1,9 +1,9 @@
 //! The extension table.
 
-use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use super::{LabelId, label_id};
+use crate::fnv::FnvMap;
 
 /// Extension (lower case, no dot) → label name.
 const TABLE: &[(&str, &str)] = &[
@@ -190,7 +190,7 @@ pub fn by_name(name: &[u8]) -> Option<LabelId> {
 }
 
 pub fn by_ext(ext: &[u8]) -> Option<LabelId> {
-    static INDEX: OnceLock<HashMap<&'static [u8], LabelId>> = OnceLock::new();
+    static INDEX: OnceLock<FnvMap<&'static [u8], LabelId>> = OnceLock::new();
     let index = INDEX.get_or_init(|| {
         TABLE
             .iter()

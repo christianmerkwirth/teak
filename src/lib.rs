@@ -8,6 +8,7 @@ pub mod cache;
 pub mod chaff;
 pub mod cli;
 pub mod detect;
+pub mod fnv;
 pub mod io;
 pub mod layout;
 pub mod render;

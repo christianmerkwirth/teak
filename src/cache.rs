@@ -11,7 +11,6 @@
 //! `templates u64` (a hash of the template table), `count u32`, then
 //! `count` records of [`RECORD`] bytes, sorted by `(dev, ino)`.
 
-use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -19,6 +18,7 @@ use std::path::{Path, PathBuf};
 use crate::chaff::ChaffClass;
 use crate::chaff::templates::fnv1a64;
 use crate::detect::{LABELS, LabelId, Source};
+use crate::fnv::FnvMap;
 
 const MAGIC: &[u8; 5] = b"TEAKC";
 const FORMAT_VERSION: u16 = 1;
@@ -92,7 +92,7 @@ pub struct Cache {
     dir: PathBuf,
     model: String,
     templates: u64,
-    entries: HashMap<(u64, u64), Entry>,
+    entries: FnvMap<(u64, u64), Entry>,
     /// Seconds since the epoch, for `last_used`.
     now: u32,
     dirty: bool,
@@ -144,7 +144,7 @@ impl Cache {
             dir: dir.to_path_buf(),
             model: model_version.to_string(),
             templates: 0,
-            entries: HashMap::new(),
+            entries: FnvMap::default(),
             now: 0,
             dirty: false,
         }
@@ -176,7 +176,7 @@ impl Cache {
         if r.0.len() != count * RECORD {
             return None;
         }
-        let mut entries = HashMap::with_capacity(count);
+        let mut entries = FnvMap::with_capacity_and_hasher(count, Default::default());
         for _ in 0..count {
             let (dev, ino, size) = (r.u64()?, r.u64()?, r.u64()?);
             let mtime_ns = r.u64()? as i64;
