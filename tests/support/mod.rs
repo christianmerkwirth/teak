@@ -160,12 +160,19 @@ pub fn fresh_cache_dir() -> PathBuf {
         ))
 }
 
+/// A config directory with no `teak/config.toml`: tests never read the
+/// user's own config file.
+pub fn empty_config_dir() -> PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR")).join("teak-no-config")
+}
+
 /// A teak command with a fixed scan time and a clean environment, in `dir`.
-/// Each command gets its own empty cache directory.
+/// Each command gets its own empty cache directory, and no user config.
 pub fn command(dir: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_teak"));
     cmd.current_dir(dir)
         .env("XDG_CACHE_HOME", fresh_cache_dir())
+        .env("XDG_CONFIG_HOME", empty_config_dir())
         .env("SOURCE_DATE_EPOCH", SCAN_TIME.to_string())
         .env_remove("TEAK_TEST_REPORT")
         .env_remove("TEAK_TEST_READ_DELAY_MS")
@@ -330,6 +337,7 @@ pub fn run_pty(dir: &Path, args: &[&str], rows: u16, cols: u16, env: &[(&str, &s
     cmd.args(args);
     cmd.cwd(dir);
     cmd.env("SOURCE_DATE_EPOCH", SCAN_TIME.to_string());
+    cmd.env("XDG_CONFIG_HOME", empty_config_dir());
     for var in [
         "NO_COLOR",
         "CLICOLOR_FORCE",
