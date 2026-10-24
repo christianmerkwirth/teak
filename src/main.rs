@@ -1,16 +1,25 @@
 use std::process::ExitCode;
 
+use teak::cli::{self, Parsed};
+
 fn main() -> ExitCode {
-    let args: Vec<_> = std::env::args_os().skip(1).collect();
-    let code = if args.len() == 1 && args[0] == "--version" {
-        println!("{}", teak::version_line());
-        ExitCode::SUCCESS
-    } else {
-        // Task-2 replaces this with the clap CLI and teak::run.
-        eprintln!("teak: not implemented yet");
-        ExitCode::from(2)
+    let code = match cli::parse_from(std::env::args_os()) {
+        Ok(Parsed::Version) => {
+            println!("{}", teak::version_line());
+            0
+        }
+        Ok(Parsed::Run(opts)) => {
+            let env = teak::Env::from_process();
+            let stdout = std::io::stdout();
+            let mut out = std::io::BufWriter::new(stdout.lock());
+            teak::run(&opts, &env, &mut out, &mut std::io::stderr())
+        }
+        Err(e) => {
+            let _ = e.print();
+            e.exit_code() as u8
+        }
     };
     #[cfg(feature = "test-hooks")]
     teak::io::hooks::write_report();
-    code
+    ExitCode::from(code)
 }

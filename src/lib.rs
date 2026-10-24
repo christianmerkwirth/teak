@@ -1,8 +1,36 @@
 //! teak: fit a large directory tree into a fixed line budget.
 //!
-//! Phase 0 holds only the `io` gate. Task-2 adds the pipeline and `run()`.
+//! [`run`] drives the pipeline for each root: walk → chaff tags → totals →
+//! salience → selection → detection on the visible rows → layout → render.
 
+pub mod aggregate;
+pub mod chaff;
+pub mod cli;
+pub mod detect;
 pub mod io;
+pub mod layout;
+pub mod render;
+pub mod salience;
+pub mod select;
+pub mod series;
+pub mod style;
+pub mod tree;
+pub mod view;
+pub mod walk;
+
+use std::collections::HashMap;
+use std::io::{IsTerminal, Write};
+use std::path::Path;
+
+use aggregate::Aggs;
+use chaff::ChaffTag;
+use cli::{Budget, ColorWhen, Opts};
+use detect::{LabelId, TypeInfo};
+use layout::{Glyphs, LayoutOpts};
+use render::Format;
+use style::Style;
+use tree::{NodeId, ScanError, Tree, flag};
+use view::View;
 
 /// The `teak --version` line, without the newline.
 pub fn version_line() -> String {
@@ -11,4 +39,258 @@ pub fn version_line() -> String {
     return format!("teak {version} (magika: on, model {})", magika::MODEL_NAME);
     #[cfg(not(feature = "magika"))]
     return format!("teak {version} (magika: off)");
+}
+
+/// The process facts that the options depend on.
+#[derive(Clone, Debug)]
+pub struct Env {
+    pub stdout_tty: bool,
+    /// Columns and rows of the terminal on stdout.
+    pub term: Option<(usize, usize)>,
+    /// Seconds since the epoch: `SOURCE_DATE_EPOCH`, or now.
+    pub scan_time: i64,
+    pub no_color: bool,
+    pub clicolor_force: bool,
+    pub ls_colors: Option<String>,
+}
+
+impl Env {
+    pub fn from_process() -> Env {
+        let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+        let scan_time = var("SOURCE_DATE_EPOCH")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs() as i64)
+            });
+        Env {
+            stdout_tty: std::io::stdout().is_terminal(),
+            term: terminal_size::terminal_size().map(|(w, h)| (usize::from(w.0), usize::from(h.0))),
+            scan_time,
+            no_color: var("NO_COLOR").is_some(),
+            clicolor_force: var("CLICOLOR_FORCE").is_some_and(|v| v != "0"),
+            ls_colors: var("LS_COLORS"),
+        }
+    }
+
+    /// A fixed environment for library callers: a pipe, no colors.
+    pub fn fixed(scan_time: i64) -> Env {
+        Env {
+            stdout_tty: false,
+            term: None,
+            scan_time,
+            no_color: false,
+            clicolor_force: false,
+            ls_colors: None,
+        }
+    }
+}
+
+/// The settings that follow from the options and the environment.
+pub struct Settings {
+    pub format: Format,
+    pub width: usize,
+    pub budget: usize,
+    pub color: bool,
+    pub glyphs: &'static Glyphs,
+}
+
+pub fn settings(opts: &Opts, env: &Env) -> Settings {
+    let format = opts.format.unwrap_or(if env.stdout_tty {
+        Format::Tty
+    } else {
+        Format::Plain
+    });
+    let width = opts.width.unwrap_or(match (format, env.term) {
+        (Format::Tty, Some((cols, _))) if cols > 0 => cols,
+        _ => 120,
+    });
+    let budget = match opts.budget {
+        Budget::Lines(n) => n,
+        Budget::Auto => match env.term {
+            Some((_, rows)) if env.stdout_tty => rows.saturating_sub(2).max(3),
+            _ => 100,
+        },
+    };
+    // --color wins, then CLICOLOR_FORCE, then NO_COLOR, then the format.
+    let color = match opts.color {
+        ColorWhen::Always => true,
+        ColorWhen::Never => false,
+        ColorWhen::Auto => {
+            if env.clicolor_force {
+                true
+            } else if env.no_color {
+                false
+            } else {
+                format == Format::Tty
+            }
+        }
+    };
+    Settings {
+        format,
+        width,
+        budget,
+        color,
+        glyphs: if opts.ascii {
+            &layout::ASCII
+        } else {
+            &layout::UNICODE
+        },
+    }
+}
+
+/// Everything teak knows about one root, with its view.
+pub struct Scan {
+    pub tree: Tree,
+    pub tags: Vec<ChaffTag>,
+    /// Totals without hidden entries.
+    pub aggs: Aggs,
+    /// Name-based labels for every node (no content).
+    pub labels: Vec<LabelId>,
+    /// Detected types of the visible files.
+    pub types: HashMap<NodeId, TypeInfo>,
+    pub view: View,
+}
+
+impl Scan {
+    pub fn type_of(&self, id: NodeId) -> TypeInfo {
+        self.types
+            .get(&id)
+            .copied()
+            .unwrap_or_else(|| TypeInfo::new(self.labels[id as usize], detect::Source::Ext))
+    }
+}
+
+#[cfg(feature = "test-hooks")]
+fn timer(name: &'static str) -> io::hooks::StageTimer {
+    io::hooks::stage(name)
+}
+
+/// A stage timer that does nothing in builds without `test-hooks`.
+#[cfg(not(feature = "test-hooks"))]
+struct NoTimer;
+
+#[cfg(not(feature = "test-hooks"))]
+fn timer(_name: &'static str) -> NoTimer {
+    NoTimer
+}
+
+/// Scans one root and builds its view.
+pub fn build(root: &Path, opts: &Opts, budget: usize, scan_time: i64) -> Result<Scan, ScanError> {
+    let threads = opts
+        .threads
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
+    let tree = {
+        let _t = timer("walk");
+        walk::scan(
+            root,
+            &walk::WalkOpts {
+                follow: opts.follow,
+                one_fs: opts.one_fs,
+                threads,
+            },
+            scan_time,
+        )?
+    };
+    let tags = {
+        let _t = timer("chaff");
+        chaff::Classifier::new(&tree, &opts.chaff).classify_names(&tree)
+    };
+    let aggs = {
+        let _t = timer("aggregate");
+        aggregate::compute(&tree, |id| chaff::is_hidden(&tags, id))
+    };
+    let labels: Vec<LabelId> = tree
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| detect::name_label(n, tree.name(i as NodeId)))
+        .collect();
+    let view = {
+        let _t = timer("select");
+        let scores = salience::score(
+            &salience::ScoreInputs {
+                tree: &tree,
+                aggs: &aggs,
+                tags: &tags,
+            },
+            &salience::Weights::default(),
+        );
+        select::plan(
+            &select::SelectInputs {
+                tree: &tree,
+                aggs: &aggs,
+                tags: &tags,
+                scores: &scores.score,
+                labels: &labels,
+            },
+            budget,
+            &select::SelectOpts {
+                depth: opts.depth,
+                series_min: opts.series_min,
+                sort: opts.sort,
+            },
+        )
+    };
+    let types = {
+        let _t = timer("detect");
+        detect::run(&view, &tree, &labels, opts.detect)
+    };
+    Ok(Scan {
+        tree,
+        tags,
+        aggs,
+        labels,
+        types,
+        view,
+    })
+}
+
+/// The layout options for a run.
+pub fn layout_opts(opts: &Opts, set: &Settings) -> LayoutOpts {
+    LayoutOpts {
+        width: set.width,
+        glyphs: set.glyphs,
+        units: opts.units,
+        time: opts.time,
+        preview: opts.preview,
+    }
+}
+
+/// Runs the whole pipeline for each root in order and returns the exit
+/// code: 0, or 1 when a root is missing or an entry had no access.
+pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -> u8 {
+    let set = settings(opts, env);
+    let style = Style { color: set.color };
+    let lopts = layout_opts(opts, &set);
+    let mut code = 0;
+    for path in &opts.paths {
+        match build(path, opts, set.budget, env.scan_time) {
+            Ok(scan) => {
+                for e in &scan.tree.errors {
+                    let _ = writeln!(err, "teak: {e}");
+                }
+                if !scan.tree.errors.is_empty()
+                    || scan.tree.nodes.iter().any(|n| n.has(flag::NO_ACCESS))
+                {
+                    code = 1;
+                }
+                let lines = {
+                    let _t = timer("layout");
+                    layout::fit(&scan, &lopts)
+                };
+                if render::write(&lines, &scan.tree, &style, out).is_err() {
+                    // A closed pipe (for example `teak | head`): stop quietly.
+                    return code;
+                }
+            }
+            Err(e) => {
+                let _ = writeln!(err, "teak: {e}");
+                code = 1;
+            }
+        }
+    }
+    let _ = out.flush();
+    code
 }

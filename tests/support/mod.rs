@@ -317,6 +317,7 @@ pub fn run_pty(dir: &Path, args: &[&str], rows: u16, cols: u16, env: &[(&str, &s
 
 /// Runs teak and kills it after `limit`. Returns `None` on a timeout.
 pub fn run_with_timeout(dir: &Path, args: &[&str], limit: Duration) -> Option<Run> {
+    use std::io::Read;
     use std::process::Stdio;
     use std::time::Instant;
 
@@ -327,10 +328,24 @@ pub fn run_with_timeout(dir: &Path, args: &[&str], limit: Duration) -> Option<Ru
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn teak");
+    // Drain both pipes, so a full pipe never blocks teak.
+    let drain = |mut r: Box<dyn Read + Send>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            r.read_to_end(&mut buf).ok();
+            buf
+        })
+    };
+    let out = drain(Box::new(child.stdout.take().unwrap()));
+    let err = drain(Box::new(child.stderr.take().unwrap()));
     let start = Instant::now();
     loop {
-        if child.try_wait().expect("poll teak").is_some() {
-            return Some(Run::from_output(child.wait_with_output().unwrap()));
+        if let Some(status) = child.try_wait().expect("poll teak") {
+            return Some(Run {
+                code: status.code(),
+                stdout: String::from_utf8(out.join().unwrap()).expect("stdout is UTF-8"),
+                stderr: String::from_utf8(err.join().unwrap()).expect("stderr is UTF-8"),
+            });
         }
         if start.elapsed() > limit {
             child.kill().ok();
