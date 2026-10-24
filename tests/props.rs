@@ -1,8 +1,8 @@
 //! Property tests: the hard budget limit (FR-12) and every entry counted
-//! (FR-21), on random trees with random P1 flags; and the same output for
-//! any thread count.
+//! (FR-21), on random trees with random flags (P1, plus `-l` and
+//! `--focus`); and the same output for any thread count.
 //!
-//! Task-4 adds `-l` and `--focus` to the flags; task-5 adds `md` and `json`.
+//! Task-5 adds `md` and `json`.
 
 mod support;
 
@@ -151,7 +151,25 @@ fn flag_sets() -> impl Strategy<Value = Vec<&'static str>> {
         Just(vec!["--show=lock", "--hide=vendor"]),
     ];
     let depth = prop_oneof![Just(vec![]), Just(vec!["-L", "0"]), Just(vec!["-L", "2"])];
-    (hidden, sort, chaff, depth).prop_map(|(a, b, c, d)| [a, b, c, d].concat())
+    let long = prop_oneof![Just(vec![]), Just(vec!["-l"])];
+    (hidden, sort, chaff, depth, long).prop_map(|(a, b, c, d, e)| [a, b, c, d, e].concat())
+}
+
+/// The directories below `root` (with `root`), in path order.
+fn dirs_of(root: &Path) -> Vec<std::path::PathBuf> {
+    let mut out = vec![root.to_path_buf()];
+    let mut i = 0;
+    while i < out.len() {
+        let mut subs: Vec<_> = fs::read_dir(&out[i])
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| fs::symlink_metadata(p).unwrap().is_dir())
+            .collect();
+        subs.sort();
+        out.extend(subs);
+        i += 1;
+    }
+    out
 }
 
 fn sizes() -> impl Strategy<Value = usize> {
@@ -171,12 +189,22 @@ proptest! {
         n in sizes(),
         budget in 3usize..=300,
         flags in flag_sets(),
+        focus in any::<Option<prop::sample::Index>>(),
     ) {
         let fx = Fixture::new();
         random_tree(fx.path(), seed, n);
         let n_text = budget.to_string();
         let mut args = vec!["-n", n_text.as_str()];
         args.extend(&flags);
+        // `--focus` on a random directory; the library resolves it against
+        // the current directory, so the path is absolute.
+        let focus_text = focus.map(|i| {
+            let dirs = dirs_of(fx.path());
+            dirs[i.index(dirs.len())].to_string_lossy().into_owned()
+        });
+        if let Some(f) = &focus_text {
+            args.extend(["--focus", f.as_str()]);
+        }
         let s = scan(fx.path(), &args);
 
         // FR-12: the view and every text layout fit the budget.
