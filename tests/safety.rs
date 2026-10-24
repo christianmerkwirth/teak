@@ -1,7 +1,7 @@
 //! Safety: read-only (FR-04), no network (FR-10), no execution of repo code
 //! (FR-76), and no secret previews (FR-77).
 //!
-//! Task-4 adds `--dupes` and task-5 adds `md` and `json` to these runs.
+//! Task-5 adds `md` and `json` to these runs.
 
 mod support;
 
@@ -343,6 +343,9 @@ fn fr77_secret_rows_show_type_and_size_only() {
             let c = support::cells(row);
             assert!(c.len() >= 4, "name, size, type, age: {row}");
         }
+        // Real previews are on: the other file shows its first line.
+        let main = out.must_row("main.rs");
+        assert!(main.contains("fn main() {}"), "{main}");
     }
 }
 

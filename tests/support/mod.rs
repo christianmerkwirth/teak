@@ -457,6 +457,9 @@ pub struct Report {
     pub stages_ms: std::collections::BTreeMap<String, f64>,
     /// Event counts, for example `magika` (files that Magika typed).
     pub counts: std::collections::BTreeMap<String, u64>,
+    /// Bytes that previews read, per path: after a type-cache hit, and the
+    /// image-header and zip-directory peeks. Not in `reads`.
+    pub preview_reads: std::collections::BTreeMap<String, u64>,
 }
 
 #[cfg(feature = "test-hooks")]
@@ -477,6 +480,13 @@ pub fn read_report(path: &Path) -> Report {
     if let Some(counts) = json["counts"].as_object() {
         for (k, v) in counts {
             report.counts.insert(k.clone(), v.as_u64().expect("count"));
+        }
+    }
+    if let Some(reads) = json["preview_reads"].as_object() {
+        for (k, v) in reads {
+            report
+                .preview_reads
+                .insert(k.clone(), v.as_u64().expect("preview read count"));
         }
     }
     report
