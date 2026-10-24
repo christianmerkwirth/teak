@@ -1,0 +1,14 @@
+{
+  "name": "shop",
+  "version": "1.4.2",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

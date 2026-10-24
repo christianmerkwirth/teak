@@ -5,7 +5,24 @@ edition = "2024"
 rust-version = "1.88"
 description = "Fit a large directory tree into a fixed line budget, with real file types from content"
 license = "MIT"
-readme = false
+readme = "README.md"
+repository = "https://github.com/christianmerkwirth/teak"
+homepage = "https://github.com/christianmerkwirth/teak"
+keywords = ["tree", "ls", "cli", "magika", "file-type"]
+categories = ["command-line-utilities", "filesystem"]
+# The published crate: the code, the templates, and the docs. The tests,
+# the corpus, and the benches stay in the repo.
+include = [
+    "/src/**",
+    "/templates/**",
+    "/build.rs",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/schema/**",
+    "/assets/**",
+]
 
 [features]
 default = ["magika"]
@@ -14,21 +31,103 @@ default = ["magika"]
 # download happens at build time only (a build dependency of ort-sys).
 magika = ["dep:magika", "dep:ort"]
 # Read counters, read delays, and stage timers for tests. Never in releases.
-test-hooks = ["dep:serde_json"]
+test-hooks = []
 
 [dependencies]
+clap = { version = "4.6.7", features = ["derive", "wrap_help"] }
+# Previews peek into compressed files (the first 4 KiB only).
+flate2 = "1.1.10"
+# Git status in process: the index, refs, and a rev-walk only. No
+# attributes, filters, or commands, so no program can run (FR-76).
+gix = { version = "0.90.0", default-features = false, features = ["index", "revision", "sha1"] }
+globset = "0.4.20"
+ignore = "0.4"
+# Image width and height from the header.
+imagesize = "0.15.0"
+infer = "0.22.0"
+lscolors = { version = "0.21.0", default-features = false }
+rustix = { version = "1.1.5", features = ["fs"] }
+# `--format json`: `preserve_order` keeps the object keys in a fixed order.
+serde_json = { version = "1", features = ["preserve_order"] }
+terminal_size = "0.4.4"
+# Config files (FR-66): parse to a table, then check each key.
+toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+unicode-width = "0.2.2"
+uzers = { version = "0.12.2", default-features = false }
+xz2 = { version = "0.1.7", features = ["static"] }
+zstd = { version = "0.14.3", default-features = false }
+
+# Magika and ONNX Runtime, for the targets with a prebuilt ONNX Runtime.
+# build.rs sets `cfg(magika)` for the same targets; the code checks that cfg,
+# not the feature.
+[target.'cfg(not(all(target_os = "macos", target_arch = "x86_64")))'.dependencies]
 magika = { version = "1.1.0", optional = true }
 ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = ["download-binaries", "tls-rustls"] }
-serde_json = { version = "1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
-ignore = "0.4"
+# `examples/gen_assets.rs`: completions and the man page from the clap
+# definitions (FR-69).
+clap_complete = "4.6.11"
+clap_mangen = "0.3.3"
+insta = "1.49.0"
+# FR-64: the JSON output against schema/teak.schema.json. No remote $ref
+# resolution, so no HTTP client.
+jsonschema = { version = "0.60.1", default-features = false }
 libc = "0.2"
+portable-pty = "0.9.0"
+proptest = "1.12.0"
+# FR-63: the Markdown output must parse with all fences closed.
+pulldown-cmark = { version = "0.13.5", default-features = false }
+regex = "1.13.1"
 serde_json = "1"
 tempfile = "3"
+unicode-width = "0.2.2"
+
+[[bench]]
+name = "walk"
+harness = false
+
+[[bench]]
+name = "scan"
+harness = false
+
+[[bench]]
+name = "magika"
+harness = false
+required-features = ["magika"]
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# The crate is its own workspace, so cargo-dist can keep its settings here.
+[workspace]
+
+# cargo-dist (`dist generate` writes .github/workflows/release.yml from this).
+# Intel macOS builds without Magika: build.rs turns it off for that target.
+[workspace.metadata.dist]
+cargo-dist-version = "0.32.0"
+ci = "github"
+installers = ["shell", "homebrew"]
+tap = "christianmerkwirth/homebrew-tap"
+publish-jobs = ["homebrew"]
+# FR-68/FR-69 checks on each OS after the release: release-check.yml.
+post-announce-jobs = ["./release-check"]
+targets = [
+    "aarch64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+]
+# FR-69: the completions and the man page go into each archive.
+include = ["assets/teak.bash", "assets/_teak", "assets/teak.fish", "assets/teak.1"]
+install-path = "CARGO_HOME"
+install-updater = false
+
+[workspace.metadata.dist.github-custom-runners]
+aarch64-unknown-linux-gnu = "ubuntu-24.04-arm"
+aarch64-apple-darwin = "macos-14"
+x86_64-apple-darwin = "macos-15-intel"
+x86_64-unknown-linux-gnu = "ubuntu-22.04"

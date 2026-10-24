@@ -1,0 +1,28 @@
+---
+source: tests/display.rs
+expression: "view(&fx, repo, &[\"--dupes\", \"-n\", \"24\"])"
+---
+shop/  4.0M · 106 files · rust crate · git main ↑1 · 2 changed
+├── ▪ chaff  target/ 4.0M 1 · .gitignore · Cargo.lock · build.log
+├── data/                 32   2  csv            3d
+│   ├── copy.csv          16      csv            3d                   id,name 2 rows
+│   └── ▪ chaff  items.csv = data/copy.csv 16
+├── docs/                180  20  ≈ markdown     3d
+│   ├── aa.md              9      markdown       3d                   # Doc aa
+│   ├── ab.md              9      markdown       3d                   # Doc ab
+│   ├── ac.md              9      markdown       3d                   # Doc ac
+│   ├── ad.md              9      markdown       3d                   # Doc ad
+│   ├── ae.md              9      markdown       3d                   # Doc ae
+│   ├── af.md              9      markdown       3d                   # Doc af
+│   ├── ag.md              9      markdown       3d                   # Doc ag
+│   └── … 13 files       117      ≈ markdown 13  3d
+├── shots/               359  13  ≈ png ~29      3d
+├── src/                  81   3  rust           1h               M2
+│   ├── api.rs            19      rust           1h               M   pub fn get() { 1 }
+│   ├── main.rs           46      rust           3d                   fn main() {}
+│   └── new.rs            16      rust           3d               ?   pub fn new() {}
+├── Cargo.toml            24      toml           3d                   {package}
+├── IMG_[0001–0012].png  348  12  png ~29        3d
+├── README.md             30      markdown       3d                   # Shop backend
+└── readme                 9      symlink        0s  ⇢ README.md
+── 24 of 24 lines · 106 files · folded 5 (boilerplate 1 · build 1 · duplicate 1 · ignored 1 · +1) · hidden 49 (vcs 49)

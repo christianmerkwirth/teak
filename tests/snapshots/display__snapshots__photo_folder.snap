@@ -1,0 +1,11 @@
+---
+source: tests/display.rs
+expression: "view(&fx, \"photos\", &[])"
+---
+photos/  177K · 73 files
+├── 2019/                    103K        40  ≈ jpeg ~2.6K     1y
+├── 2020/                     74K        31  jpeg 94% png 6%  1y
+│   ├── IMG_[0001–0030].jpg   70K  26 of 30  jpeg ~2.7K       1y
+│   └── scan_[01–05].png     4.4K         5  png ~903         1y
+└── index.txt                   7            txt              1y  photos
+── 7 of 40 lines · 73 files · hidden 1 (editor 1)

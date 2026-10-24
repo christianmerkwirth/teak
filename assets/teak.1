@@ -1,0 +1,357 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH teak 1  "teak 0.1.0" "teak manual"
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.SH NAME
+teak \- Fit a large directory tree into a fixed line budget
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.SH SYNOPSIS
+\fBteak\fR [\fB\-n\fR|\fB\-\-lines\fR] [\fB\-L\fR|\fB\-\-depth\fR] [\fB\-l\fR|\fB\-\-long\fR] [\fB\-\-sort\fR] [\fB\-\-focus\fR] [\fB\-\-series\-min\fR] [\fB\-\-detect\fR] [\fB\-\-preview\fR] [\fB\-\-dupes\fR] [\fB\-\-mismatches\fR] [\fB\-\-no\-cache\fR] [\fB\-\-templates\fR] [\fB\-\-templates\-only\fR] [\fB\-\-dump\-templates\fR] [\fB\-A\fR|\fB\-\-almost\-all\fR] [\fB\-a\fR|\fB\-\-all\fR] [\fB\-\-no\-gitignore\fR] [\fB\-\-chaff\fR] [\fB\-\-show\fR] [\fB\-\-fold\fR] [\fB\-\-hide\fR] [\fB\-x\fR|\fB\-\-one\-file\-system\fR] [\fB\-\-follow\fR] [\fB\-\-format\fR] [\fB\-\-json\-full\fR] [\fB\-\-color\fR] [\fB\-\-ascii\fR] [\fB\-\-width\fR] [\fB\-\-time\fR] [\fB\-\-bytes\fR] [\fB\-\-si\fR] [\fB\-\-no\-git\fR] [\fB\-\-why\fR] [\fB\-\-stats\fR] [\fB\-j\fR|\fB\-\-threads\fR] [\fB\-\-version\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fIPATH\fR] 
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.SH DESCRIPTION
+Fit a large directory tree into a fixed line budget
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.SH OPTIONS
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+[\fIPATH\fR]
+Directories or files to show (default: the current directory)
+.SH LAYOUT
+.TP
+\fB\-n\fR, \fB\-\-lines\fR \fI<N|auto>\fR
+Line budget: a number (3 or more), or auto (terminal height \- 2) [default: 100]
+.TP
+\fB\-L\fR, \fB\-\-depth\fR \fI<N>\fR
+Never open deeper than N
+.TP
+\fB\-l\fR, \fB\-\-long\fR
+All columns (ls \-lah style)
+.TP
+\fB\-\-sort\fR \fI<KEY>\fR
+Display order inside a directory
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+salience
+.IP \(bu 2
+name
+.IP \(bu 2
+size
+.IP \(bu 2
+age
+.IP \(bu 2
+type
+.RE
+.TP
+\fB\-\-focus\fR \fI<PATH>\fR
+Spend most of the budget on PATH, keep the context around it
+.TP
+\fB\-\-series\-min\fR \fI<N>\fR
+Smallest group that becomes a series row [default: 4]
+.SH CONTENT
+.TP
+\fB\-\-detect\fR \fI<MODE>\fR
+Content detection [default: full]
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+off
+.IP \(bu 2
+fast
+.IP \(bu 2
+full
+.RE
+.TP
+\fB\-\-preview\fR \fI<MODE>\fR
+Previews [default: short]
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+off
+.IP \(bu 2
+short
+.IP \(bu 2
+full
+.RE
+.TP
+\fB\-\-dupes\fR
+Find duplicate files: fold copies of visible files
+.TP
+\fB\-\-mismatches\fR
+List only files whose content does not match the extension
+.TP
+\fB\-\-no\-cache\fR
+Do not read or write the type cache
+.TP
+\fB\-\-templates\fR \fI<DIR>\fR
+Add boilerplate templates from DIR (boilerplate/ and generated/)
+.TP
+\fB\-\-templates\-only\fR
+Use only the templates from \-\-templates
+.TP
+\fB\-\-dump\-templates\fR \fI<DIR>\fR
+Write the built\-in templates to DIR and exit
+.SH FILTERING
+.TP
+\fB\-A\fR, \fB\-\-almost\-all\fR
+Show hidden entries (dotfiles, .git/), folded into the chaff line
+.TP
+\fB\-a\fR, \fB\-\-all\fR
+Show everything: no chaff folding, no hidden entries, no gitignore
+.TP
+\fB\-\-no\-gitignore\fR
+Do not use .gitignore rules
+.TP
+\fB\-\-chaff\fR \fI<LEVEL>\fR
+Set the action for all chaff classes
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+show
+.IP \(bu 2
+dim
+.IP \(bu 2
+fold
+.IP \(bu 2
+hide
+.RE
+.TP
+\fB\-\-show\fR \fI<CLASS,…>\fR
+Show these chaff classes as normal rows
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+vendor
+.IP \(bu 2
+build
+.IP \(bu 2
+cache
+.IP \(bu 2
+vcs
+.IP \(bu 2
+editor
+.IP \(bu 2
+lock
+.IP \(bu 2
+generated
+.IP \(bu 2
+minified
+.IP \(bu 2
+boilerplate
+.IP \(bu 2
+empty
+.IP \(bu 2
+duplicate
+.IP \(bu 2
+ignored
+.RE
+.TP
+\fB\-\-fold\fR \fI<CLASS,…>\fR
+Fold these chaff classes into the chaff line
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+vendor
+.IP \(bu 2
+build
+.IP \(bu 2
+cache
+.IP \(bu 2
+vcs
+.IP \(bu 2
+editor
+.IP \(bu 2
+lock
+.IP \(bu 2
+generated
+.IP \(bu 2
+minified
+.IP \(bu 2
+boilerplate
+.IP \(bu 2
+empty
+.IP \(bu 2
+duplicate
+.IP \(bu 2
+ignored
+.RE
+.TP
+\fB\-\-hide\fR \fI<CLASS,…>\fR
+Count these chaff classes only in the footer
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+vendor
+.IP \(bu 2
+build
+.IP \(bu 2
+cache
+.IP \(bu 2
+vcs
+.IP \(bu 2
+editor
+.IP \(bu 2
+lock
+.IP \(bu 2
+generated
+.IP \(bu 2
+minified
+.IP \(bu 2
+boilerplate
+.IP \(bu 2
+empty
+.IP \(bu 2
+duplicate
+.IP \(bu 2
+ignored
+.RE
+.TP
+\fB\-x\fR, \fB\-\-one\-file\-system\fR
+Do not cross into other file systems
+.TP
+\fB\-\-follow\fR
+Follow symlinks
+.SH OUTPUT
+.TP
+\fB\-\-format\fR \fI<FMT>\fR
+Output format (default: tty on a terminal, else plain)
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+tty
+.IP \(bu 2
+plain
+.IP \(bu 2
+md
+.IP \(bu 2
+json
+.RE
+.TP
+\fB\-\-json\-full\fR
+JSON with every entry (implies \-\-format json)
+.TP
+\fB\-\-color\fR \fI<WHEN>\fR
+Colors [default: auto]
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+auto
+.IP \(bu 2
+always
+.IP \(bu 2
+never
+.RE
+.TP
+\fB\-\-ascii\fR
+ASCII glyphs only
+.TP
+\fB\-\-width\fR \fI<N>\fR
+Output width (default: the terminal width, or 120)
+.TP
+\fB\-\-time\fR \fI<MODE>\fR
+Age format [default: relative]
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+relative
+.IP \(bu 2
+iso
+.RE
+.TP
+\fB\-\-bytes\fR
+Sizes in whole bytes
+.TP
+\fB\-\-si\fR
+Sizes in SI units (base 1000)
+.TP
+\fB\-\-no\-git\fR
+No git status
+.SH HELP
+.TP
+\fB\-\-why\fR \fI<PATH>\fR
+Explain the decision for PATH
+.TP
+\fB\-\-stats\fR
+Print only the header, the type table, and the footer
+.TP
+\fB\-j\fR, \fB\-\-threads\fR \fI<N>\fR
+Walk threads
+.TP
+\fB\-\-version\fR
+Print the version
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.SH FILES
+.TP
+\fI~/.config/teak/config.toml\fR
+The user config. $XDG_CONFIG_HOME/teak/config.toml when XDG_CONFIG_HOME is set.
+.TP
+\fI.teak.toml\fR
+The project config: the nearest one in the root or a parent directory.
+Flags override the project file; the project file overrides the user file. Keys: lines, depth, sort, series_min, detect, preview, color, width, time, format, templates, [chaff] show/fold/hide, [[chaff.rules]] pattern and class, and [weights] size, recency, git, rarity, role, anomaly. A syntax error or a bad value exits with code 2; an unknown key is a warning.
+.SH "EXIT STATUS"
+.TP
+\fB0\fR
+Success.
+.TP
+\fB1\fR
+Success with errors: a missing root, or entries that teak cannot read.
+.TP
+\fB2\fR
+A usage error: a bad flag value or a bad config file.
+.SH ENVIRONMENT
+.TP
+\fBSOURCE_DATE_EPOCH\fR
+The scan time, so relative ages and the output are fixed.
+.TP
+\fBNO_COLOR\fR
+No colors, unless \-\-color always.
+.TP
+\fBCLICOLOR_FORCE\fR
+Colors, also in a pipe.
+.TP
+\fBLS_COLORS\fR
+The colors of the names.
+.TP
+\fBXDG_CACHE_HOME\fR
+The type cache lives in its teak directory.
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.SH VERSION
+v0.1.0

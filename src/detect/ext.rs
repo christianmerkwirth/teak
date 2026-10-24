@@ -1,0 +1,208 @@
+//! The extension table.
+
+use std::sync::OnceLock;
+
+use super::{LabelId, label_id};
+use crate::fnv::FnvMap;
+
+/// Extension (lower case, no dot) → label name.
+const TABLE: &[(&str, &str)] = &[
+    ("txt", "txt"),
+    ("text", "txt"),
+    ("log", "txt"),
+    ("md", "markdown"),
+    ("markdown", "markdown"),
+    ("rst", "rst"),
+    ("tex", "tex"),
+    ("rtf", "rtf"),
+    ("pdf", "pdf"),
+    ("doc", "doc"),
+    ("docx", "docx"),
+    ("xlsx", "xlsx"),
+    ("pptx", "pptx"),
+    ("epub", "epub"),
+    ("rs", "rust"),
+    ("py", "python"),
+    ("pyi", "python"),
+    ("js", "javascript"),
+    ("mjs", "javascript"),
+    ("cjs", "javascript"),
+    ("jsx", "javascript"),
+    ("ts", "typescript"),
+    ("tsx", "typescript"),
+    ("mts", "typescript"),
+    ("c", "c"),
+    ("h", "c"),
+    ("cc", "cpp"),
+    ("cpp", "cpp"),
+    ("cxx", "cpp"),
+    ("hpp", "cpp"),
+    ("hh", "cpp"),
+    ("cs", "cs"),
+    ("go", "go"),
+    ("java", "java"),
+    ("kt", "kotlin"),
+    ("kts", "kotlin"),
+    ("scala", "scala"),
+    ("swift", "swift"),
+    ("m", "objectivec"),
+    ("mm", "objectivec"),
+    ("rb", "ruby"),
+    ("php", "php"),
+    ("pl", "perl"),
+    ("pm", "perl"),
+    ("lua", "lua"),
+    ("r", "r"),
+    ("jl", "julia"),
+    ("hs", "haskell"),
+    ("ml", "ocaml"),
+    ("mli", "ocaml"),
+    ("ex", "elixir"),
+    ("exs", "elixir"),
+    ("erl", "erlang"),
+    ("clj", "clojure"),
+    ("dart", "dart"),
+    ("zig", "zig"),
+    ("s", "asm"),
+    ("asm", "asm"),
+    ("sh", "shell"),
+    ("bash", "shell"),
+    ("zsh", "shell"),
+    ("fish", "shell"),
+    ("ps1", "powershell"),
+    ("bat", "batch"),
+    ("cmd", "batch"),
+    ("mk", "makefile"),
+    ("cmake", "cmake"),
+    ("html", "html"),
+    ("htm", "html"),
+    ("css", "css"),
+    ("scss", "scss"),
+    ("sass", "scss"),
+    ("less", "css"),
+    ("vue", "vue"),
+    ("svelte", "vue"),
+    ("sql", "sql"),
+    ("proto", "proto"),
+    ("gradle", "groovy"),
+    ("groovy", "groovy"),
+    ("vim", "vim"),
+    ("el", "lisp"),
+    ("lisp", "lisp"),
+    ("nix", "nix"),
+    ("tf", "terraform"),
+    ("dts", "devicetree"),
+    ("dtsi", "devicetree"),
+    ("awk", "awk"),
+    ("json", "json"),
+    ("jsonl", "jsonl"),
+    ("ndjson", "jsonl"),
+    ("toml", "toml"),
+    ("lock", "toml"),
+    ("yaml", "yaml"),
+    ("yml", "yaml"),
+    ("xml", "xml"),
+    ("csv", "csv"),
+    ("tsv", "tsv"),
+    ("ini", "ini"),
+    ("cfg", "ini"),
+    ("conf", "ini"),
+    ("graphql", "graphql"),
+    ("gql", "graphql"),
+    ("parquet", "parquet"),
+    ("avro", "avro"),
+    ("sqlite", "sqlite"),
+    ("sqlite3", "sqlite"),
+    ("db", "sqlite"),
+    ("npy", "npy"),
+    ("png", "png"),
+    ("jpg", "jpeg"),
+    ("jpeg", "jpeg"),
+    ("gif", "gif"),
+    ("webp", "webp"),
+    ("svg", "svg"),
+    ("bmp", "bmp"),
+    ("tif", "tiff"),
+    ("tiff", "tiff"),
+    ("ico", "ico"),
+    ("heic", "heif"),
+    ("heif", "heif"),
+    ("avif", "avif"),
+    ("psd", "psd"),
+    ("mp3", "mp3"),
+    ("wav", "wav"),
+    ("flac", "flac"),
+    ("ogg", "ogg"),
+    ("m4a", "m4a"),
+    ("aac", "aac"),
+    ("mp4", "mp4"),
+    ("m4v", "mp4"),
+    ("mkv", "mkv"),
+    ("webm", "webm"),
+    ("mov", "mov"),
+    ("avi", "avi"),
+    ("zip", "zip"),
+    ("gz", "gzip"),
+    ("tgz", "gzip"),
+    ("tar", "tar"),
+    ("xz", "xz"),
+    ("zst", "zstd"),
+    ("bz2", "bzip2"),
+    ("7z", "7zip"),
+    ("rar", "rar"),
+    ("jar", "jar"),
+    ("war", "jar"),
+    ("deb", "deb"),
+    ("rpm", "rpm"),
+    ("dmg", "dmg"),
+    ("iso", "iso"),
+    ("so", "elf"),
+    ("dylib", "macho"),
+    ("exe", "pebin"),
+    ("dll", "pebin"),
+    ("wasm", "wasm"),
+    ("class", "javabytecode"),
+    ("pyc", "pyc"),
+    ("o", "object"),
+    ("a", "object"),
+    ("ttf", "font"),
+    ("otf", "font"),
+    ("woff", "font"),
+    ("woff2", "font"),
+    ("pkl", "pickle"),
+    ("pickle", "pickle"),
+    ("onnx", "onnx"),
+    ("pem", "pem"),
+    ("crt", "pem"),
+    ("key", "pem"),
+];
+
+/// The extension of a name: the bytes after the last `.`, if that dot is
+/// not the first byte. `None` for names like `Makefile` or `.bashrc`.
+pub fn ext_of(name: &[u8]) -> Option<&[u8]> {
+    let dot = name.iter().rposition(|&b| b == b'.')?;
+    (dot > 0 && dot + 1 < name.len()).then(|| &name[dot + 1..])
+}
+
+/// The label for a name's extension.
+pub fn by_name(name: &[u8]) -> Option<LabelId> {
+    by_ext(ext_of(name)?)
+}
+
+pub fn by_ext(ext: &[u8]) -> Option<LabelId> {
+    static INDEX: OnceLock<FnvMap<&'static [u8], LabelId>> = OnceLock::new();
+    let index = INDEX.get_or_init(|| {
+        TABLE
+            .iter()
+            .map(|(e, l)| (e.as_bytes(), label_id(l)))
+            .collect()
+    });
+    if ext.len() > 16 {
+        return None;
+    }
+    let mut buf = [0u8; 16];
+    let lower = &mut buf[..ext.len()];
+    lower.copy_from_slice(ext);
+    lower.make_ascii_lowercase();
+    index.get(&*lower).copied()
+}

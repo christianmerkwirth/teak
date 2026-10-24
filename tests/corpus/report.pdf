@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quarterly report</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="top"><nav><ul><li><a href="/">Home</a></li><li><a href="/reports">Reports</a></li></ul></nav></header>
+  <main>
+    <h1>Quarterly report</h1>
+    <p>Revenue grew in all regions. See the <a href="/notes">notes</a>.</p>
+    <table class="data">
+      <thead><tr><th>Region</th><th>Revenue</th><th></th></tr></thead>
+      <tbody>
+      <tr><td class="region">Region 0</td><td class="num">0</td><td><a href="/detail/0">details</a></td></tr>
+      <tr><td class="region">Region 1</td><td class="num">37</td><td><a href="/detail/1">details</a></td></tr>
+      <tr><td class="region">Region 2</td><td class="num">74</td><td><a href="/detail/2">details</a></td></tr>
+      <tr><td class="region">Region 3</td><td class="num">111</td><td><a href="/detail/3">details</a></td></tr>
+      <tr><td class="region">Region 4</td><td class="num">148</td><td><a href="/detail/4">details</a></td></tr>
+      <tr><td class="region">Region 5</td><td class="num">185</td><td><a href="/detail/5">details</a></td></tr>
+      <tr><td class="region">Region 6</td><td class="num">222</td><td><a href="/detail/6">details</a></td></tr>
+      <tr><td class="region">Region 7</td><td class="num">259</td><td><a href="/detail/7">details</a></td></tr>
+      <tr><td class="region">Region 8</td><td class="num">296</td><td><a href="/detail/8">details</a></td></tr>
+      <tr><td class="region">Region 9</td><td class="num">333</td><td><a href="/detail/9">details</a></td></tr>
+      <tr><td class="region">Region 10</td><td class="num">370</td><td><a href="/detail/10">details</a></td></tr>
+      <tr><td class="region">Region 11</td><td class="num">407</td><td><a href="/detail/11">details</a></td></tr>
+      </tbody>
+    </table>
+  </main>
+  <footer><p>&copy; Example Corp</p></footer>
+</body>
+</html>

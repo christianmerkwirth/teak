@@ -1,0 +1,13 @@
+import os
+import sys
+
+
+def main():
+    for name in sorted(os.listdir(".")):
+        if name.endswith(".py"):
+            print(name)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

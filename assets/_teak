@@ -1,0 +1,77 @@
+#compdef teak
+
+autoload -U is-at-least
+
+_teak() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : \
+'-n+[Line budget\: a number (3 or more), or auto (terminal height - 2) \[default\: 100\]]:N|auto:_default' \
+'--lines=[Line budget\: a number (3 or more), or auto (terminal height - 2) \[default\: 100\]]:N|auto:_default' \
+'-L+[Never open deeper than N]:N:_default' \
+'--depth=[Never open deeper than N]:N:_default' \
+'--sort=[Display order inside a directory]:KEY:(salience name size age type)' \
+'--focus=[Spend most of the budget on PATH, keep the context around it]:PATH:_files' \
+'--series-min=[Smallest group that becomes a series row \[default\: 4\]]:N:_default' \
+'--detect=[Content detection \[default\: full\]]:MODE:(off fast full)' \
+'--preview=[Previews \[default\: short\]]:MODE:(off short full)' \
+'*--templates=[Add boilerplate templates from DIR (boilerplate/ and generated/)]:DIR:_files' \
+'--dump-templates=[Write the built-in templates to DIR and exit]:DIR:_files' \
+'--chaff=[Set the action for all chaff classes]:LEVEL:(show dim fold hide)' \
+'*--show=[Show these chaff classes as normal rows]:CLASS,…:(vendor build cache vcs editor lock generated minified boilerplate empty duplicate ignored)' \
+'*--fold=[Fold these chaff classes into the chaff line]:CLASS,…:(vendor build cache vcs editor lock generated minified boilerplate empty duplicate ignored)' \
+'*--hide=[Count these chaff classes only in the footer]:CLASS,…:(vendor build cache vcs editor lock generated minified boilerplate empty duplicate ignored)' \
+'--format=[Output format (default\: tty on a terminal, else plain)]:FMT:(tty plain md json)' \
+'--color=[Colors \[default\: auto\]]:WHEN:(auto always never)' \
+'--width=[Output width (default\: the terminal width, or 120)]:N:_default' \
+'--time=[Age format \[default\: relative\]]:MODE:(relative iso)' \
+'--why=[Explain the decision for PATH]:PATH:_files' \
+'-j+[Walk threads]:N:_default' \
+'--threads=[Walk threads]:N:_default' \
+'-l[All columns (ls -lah style)]' \
+'--long[All columns (ls -lah style)]' \
+'--dupes[Find duplicate files\: fold copies of visible files]' \
+'--mismatches[List only files whose content does not match the extension]' \
+'--no-cache[Do not read or write the type cache]' \
+'--templates-only[Use only the templates from --templates]' \
+'-A[Show hidden entries (dotfiles, .git/), folded into the chaff line]' \
+'--almost-all[Show hidden entries (dotfiles, .git/), folded into the chaff line]' \
+'-a[Show everything\: no chaff folding, no hidden entries, no gitignore]' \
+'--all[Show everything\: no chaff folding, no hidden entries, no gitignore]' \
+'--no-gitignore[Do not use .gitignore rules]' \
+'-x[Do not cross into other file systems]' \
+'--one-file-system[Do not cross into other file systems]' \
+'--follow[Follow symlinks]' \
+'--json-full[JSON with every entry (implies --format json)]' \
+'--ascii[ASCII glyphs only]' \
+'--bytes[Sizes in whole bytes]' \
+'--si[Sizes in SI units (base 1000)]' \
+'--no-git[No git status]' \
+'--stats[Print only the header, the type table, and the footer]' \
+'--version[Print the version]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'*::paths -- Directories or files to show (default\: the current directory):_files' \
+&& ret=0
+}
+
+(( $+functions[_teak_commands] )) ||
+_teak_commands() {
+    local commands; commands=()
+    _describe -t commands 'teak commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_teak" ]; then
+    _teak "$@"
+else
+    compdef _teak teak
+fi

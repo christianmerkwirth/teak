@@ -1,0 +1,11 @@
+---
+source: tests/display.rs
+expression: "view(&fx, \"lake\", &[])"
+---
+lake/  4.3M · 152 files
+├── blobs/        100   20  unknown ~5      3w
+├── logs/          90   30  ≈ txt ~3        3w
+├── raw/         4.3M  100  ≈ parquet ~44K  3w
+├── README.md       7       markdown        3w  # Lake
+└── schema.json     3       json            3w
+── 7 of 40 lines · 152 files

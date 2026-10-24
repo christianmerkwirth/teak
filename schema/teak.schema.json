@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/christianmerkwirth/teak/schema/teak.schema.json",
+  "title": "teak JSON output",
+  "description": "The output of `teak --format json` and `teak --json-full`, schema version 1. Several roots give an array of these documents.",
+  "type": "object",
+  "required": ["schema_version", "root", "scan_time", "header", "rows", "footer", "types"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "root": { "type": "string", "description": "The root as given, with `/` after a directory." },
+    "scan_time": { "type": "integer", "description": "Seconds since the epoch: SOURCE_DATE_EPOCH, or the time of the scan." },
+    "header": {
+      "type": "object",
+      "required": ["size", "files", "kinds", "git"],
+      "additionalProperties": false,
+      "properties": {
+        "size": { "$ref": "#/$defs/count" },
+        "files": { "$ref": "#/$defs/count" },
+        "kinds": { "type": "array", "items": { "type": "string" } },
+        "git": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["branch", "ahead", "behind", "changed"],
+              "additionalProperties": false,
+              "properties": {
+                "branch": { "type": "string" },
+                "ahead": { "$ref": "#/$defs/count" },
+                "behind": { "$ref": "#/$defs/count" },
+                "changed": { "$ref": "#/$defs/count" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "description": "The visible rows in display order. Their number is at most the line budget.",
+      "items": { "$ref": "#/$defs/row" }
+    },
+    "footer": {
+      "type": "object",
+      "required": ["used", "budget", "total_files", "folded", "hidden"],
+      "additionalProperties": false,
+      "properties": {
+        "used": { "$ref": "#/$defs/count" },
+        "budget": { "$ref": "#/$defs/count" },
+        "total_files": { "$ref": "#/$defs/count" },
+        "folded": { "$ref": "#/$defs/class_counts" },
+        "hidden": { "$ref": "#/$defs/class_counts" }
+      }
+    },
+    "types": {
+      "type": "array",
+      "description": "Type groups of the files that are not hidden, by size.",
+      "items": {
+        "type": "object",
+        "required": ["group", "files", "size"],
+        "additionalProperties": false,
+        "properties": {
+          "group": { "enum": ["code", "text", "data", "image", "audio/video", "archive", "exec", "binary", "other"] },
+          "files": { "$ref": "#/$defs/count" },
+          "size": { "$ref": "#/$defs/count" }
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "description": "--json-full: every node in tree order, the root first.",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 },
+    "time": { "type": ["integer", "null"], "description": "Seconds since the epoch." },
+    "class": {
+      "enum": ["vendor", "build", "cache", "vcs", "editor", "lock", "generated", "minified", "boilerplate", "empty", "duplicate", "ignored", "dotfile"]
+    },
+    "class_counts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["class", "files"],
+        "additionalProperties": false,
+        "properties": {
+          "class": { "$ref": "#/$defs/class" },
+          "files": { "$ref": "#/$defs/count" }
+        }
+      }
+    },
+    "type_mix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "files", "size"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string" },
+          "files": { "$ref": "#/$defs/count" },
+          "size": { "$ref": "#/$defs/count" }
+        }
+      }
+    },
+    "flag": {
+      "enum": ["open", "first", "no_access", "loop", "broken", "mount", "pseudo_fs", "secret"]
+    },
+    "row": {
+      "type": "object",
+      "required": ["kind", "path", "depth", "size", "files", "dirs", "mtime", "type", "type_mix", "estimated", "class", "flags"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["entry", "overflow", "series", "summary", "chaff", "mismatch", "more"],
+          "description": "entry: a file or an open directory (flag `open`). summary: a closed directory. overflow: the children of `path` that do not fit. series: a run of names like IMG_0001.png. chaff: the folded entries of `path`, in `items`. mismatch and more: the --mismatches view."
+        },
+        "path": { "type": "string", "description": "Relative to the root, `/`-joined, `/` after a directory, `\\xHH` for bytes that are not UTF-8." },
+        "depth": { "$ref": "#/$defs/count" },
+        "size": { "$ref": "#/$defs/count" },
+        "files": { "$ref": "#/$defs/count", "description": "The files the row stands for. An open directory gives its total; the rows below it stand for the same files." },
+        "dirs": { "$ref": "#/$defs/count" },
+        "mtime": { "$ref": "#/$defs/time", "description": "The newest mtime." },
+        "type": { "type": ["string", "null"] },
+        "type_mix": { "$ref": "#/$defs/type_mix" },
+        "estimated": { "type": "boolean" },
+        "class": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/class" }] },
+        "flags": { "type": "array", "items": { "$ref": "#/$defs/flag" } },
+        "git": { "type": "string", "description": "A status letter, or M<n> for a directory." },
+        "preview": { "type": "string" },
+        "mismatch": { "type": "string", "description": "The type that the extension says." },
+        "dup_of": { "type": "string", "description": "--dupes: the path of the original." },
+        "target": { "type": "string", "description": "The target of a symlink." },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "class", "size", "files", "large"],
+            "additionalProperties": false,
+            "properties": {
+              "path": { "type": "string" },
+              "class": { "$ref": "#/$defs/class" },
+              "size": { "$ref": "#/$defs/count" },
+              "files": { "$ref": "#/$defs/count" },
+              "large": { "type": "boolean" },
+              "dup_of": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["path", "kind", "size", "mtime", "mode", "class", "visible_in"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "kind": { "enum": ["dir", "file", "symlink", "fifo", "socket", "device"] },
+        "size": { "$ref": "#/$defs/count" },
+        "mtime": { "$ref": "#/$defs/time" },
+        "mode": { "type": "string", "description": "As in ls -l, for example -rw-r--r--." },
+        "class": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/class" }] },
+        "type": { "type": "string" },
+        "visible_in": { "type": ["integer", "null"], "minimum": 0, "description": "The index in rows of the row that stands for this entry; null when it is hidden." }
+      }
+    }
+  }
+}
