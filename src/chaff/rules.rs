@@ -1,11 +1,16 @@
-//! Global name rules (PRD §6.1).
+//! Global name rules (PRD §6.1), and the user rules from the config files.
 //!
-//! A pattern ending in `/` matches a directory; `*x` matches a name that
-//! ends in `x`; any other pattern is an exact file name. `LICENSE` is not
-//! chaff by name: task-3 adds template matching.
+//! A global pattern ending in `/` matches a directory; `*x` matches a name
+//! that ends in `x`; any other pattern is an exact file name. `LICENSE` is
+//! not chaff by name: task-3 adds template matching.
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
 use std::sync::OnceLock;
+
+use globset::{GlobBuilder, GlobMatcher};
 
 use super::ChaffClass::{self, *};
 
@@ -139,4 +144,69 @@ pub fn pattern_of(name: &[u8], is_dir: bool) -> Option<&'static str> {
             (name.len() > suffix.len() && name.ends_with(suffix.as_bytes())).then_some(pat)
         })
     })
+}
+
+/// A `[[chaff.rules]]` entry of a config file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UserRule {
+    pub pattern: String,
+    pub class: ChaffClass,
+}
+
+/// The compiled user rules, in config order: the first match wins.
+///
+/// Patterns are globs, as in `.gitignore`: a trailing `/` matches only a
+/// directory; a pattern with a `/` matches the path from the scan root;
+/// any other pattern matches the name. `*` does not cross a `/`; `**` does.
+#[derive(Default)]
+pub struct UserRules {
+    rules: Vec<UserRuleMatcher>,
+}
+
+struct UserRuleMatcher {
+    matcher: GlobMatcher,
+    dir_only: bool,
+    anchored: bool,
+    class: ChaffClass,
+    pattern: String,
+}
+
+impl UserRules {
+    pub fn new(rules: &[UserRule]) -> Result<UserRules, String> {
+        let mut out = Vec::new();
+        for r in rules {
+            let (body, dir_only) = match r.pattern.strip_suffix('/') {
+                Some(b) => (b, true),
+                None => (r.pattern.as_str(), false),
+            };
+            let anchored = body.contains('/');
+            let body = body.trim_start_matches('/');
+            let glob = GlobBuilder::new(body)
+                .literal_separator(true)
+                .build()
+                .map_err(|e| format!("bad pattern `{}`: {}", r.pattern, e.kind()))?;
+            out.push(UserRuleMatcher {
+                matcher: glob.compile_matcher(),
+                dir_only,
+                anchored,
+                class: r.class,
+                pattern: r.pattern.clone(),
+            });
+        }
+        Ok(UserRules { rules: out })
+    }
+
+    /// The class and the pattern of the first rule that matches. `rel` is
+    /// the path from the scan root.
+    pub fn find(&self, rel: &[u8], name: &[u8], is_dir: bool) -> Option<(ChaffClass, &str)> {
+        self.rules.iter().find_map(|r| {
+            if r.dir_only && !is_dir {
+                return None;
+            }
+            let subject = if r.anchored { rel } else { name };
+            r.matcher
+                .is_match(Path::new(OsStr::from_bytes(subject)))
+                .then_some((r.class, r.pattern.as_str()))
+        })
+    }
 }

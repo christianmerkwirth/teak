@@ -7,6 +7,7 @@ pub mod aggregate;
 pub mod cache;
 pub mod chaff;
 pub mod cli;
+pub mod config;
 pub mod detect;
 pub mod dupes;
 pub mod explain;
@@ -393,7 +394,7 @@ pub fn build(
             dupes: HashMap::new(),
         });
     }
-    let weights = salience::Weights::default();
+    let weights = opts.weights;
     let mut why_terms = None;
     let mut view = {
         let _t = timer("select");

@@ -135,13 +135,17 @@ pub struct ChaffOpts {
     pub no_gitignore: bool,
     /// `--chaff LEVEL`.
     pub level: Option<Action>,
-    /// `--show/--fold/--hide`, in command-line order.
+    /// `--show/--fold/--hide`, in command-line order (after the config
+    /// files' `show/fold/hide`).
     pub overrides: Vec<(ChaffClass, Action)>,
+    /// `[[chaff.rules]]` from the config files: the first source (FR-31).
+    pub rules: Vec<rules::UserRule>,
 }
 
 pub struct Classifier<'a> {
     opts: &'a ChaffOpts,
     templates: &'a templates::Templates,
+    user: rules::UserRules,
 }
 
 /// The largest rule file that teak reads.
@@ -165,7 +169,13 @@ impl<'a> Classifier<'a> {
         opts: &'a ChaffOpts,
         templates: &'a templates::Templates,
     ) -> Classifier<'a> {
-        Classifier { opts, templates }
+        // The config load checks the patterns, so a bad one cannot get here.
+        let user = rules::UserRules::new(&opts.rules).unwrap_or_default();
+        Classifier {
+            opts,
+            templates,
+            user,
+        }
     }
 
     /// The tag from a content check (generated, minified, or a template),
@@ -391,7 +401,10 @@ impl<'a> Classifier<'a> {
                 .map_or_else(|| "gitignore".to_string(), |w| format!("gitignore: {w}")),
             Source::Hidden => "dotfile".to_string(),
             Source::Content => "content check".to_string(),
-            Source::User => "user rule".to_string(),
+            Source::User => self.user.find(rel, name, is_dir).map_or_else(
+                || "user rule".to_string(),
+                |(_, p)| format!("user rule: {p}"),
+            ),
             Source::None | Source::Inherited => String::new(),
         }
     }
@@ -406,6 +419,10 @@ impl<'a> Classifier<'a> {
             source,
             label: 0,
         };
+        // The user rules from the config files come first (FR-31).
+        if let Some((class, _)) = self.user.find(rel, name, is_dir) {
+            return tag(Some(class), Source::User);
+        }
         // .gitattributes: the nearest file with an opinion decides.
         let mut blocked: Vec<ChaffClass> = Vec::new();
         for (class, pick) in [

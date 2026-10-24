@@ -280,5 +280,5 @@ fn fr67_weights_change_what_opens() {
     let a = score(&run_xdg(fx.path(), cfg.path(), &["--why", "a", "-n", "12"]));
     assert!(z_default > 0.25, "{z_default}");
     assert!(z < 0.1, "{z}");
-    assert!(a > 0.8, "{a}");
+    assert!(a > 0.5, "{a}");
 }

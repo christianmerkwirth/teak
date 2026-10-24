@@ -35,6 +35,8 @@ rustix = { version = "1.1.5", features = ["fs"] }
 # `--format json`: `preserve_order` keeps the object keys in a fixed order.
 serde_json = { version = "1", features = ["preserve_order"] }
 terminal_size = "0.4.4"
+# Config files (FR-66): parse to a table, then check each key.
+toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
 unicode-width = "0.2.2"
 uzers = { version = "0.12.2", default-features = false }
 xz2 = { version = "0.1.7", features = ["static"] }

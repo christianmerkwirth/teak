@@ -28,7 +28,7 @@ pub enum ColorWhen {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum SortArg {
+pub(crate) enum SortArg {
     Salience,
     Name,
     Size,
@@ -37,7 +37,7 @@ enum SortArg {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum ActionArg {
+pub(crate) enum ActionArg {
     Show,
     Dim,
     Fold,
@@ -45,7 +45,7 @@ enum ActionArg {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum ClassArg {
+pub(crate) enum ClassArg {
     Vendor,
     Build,
     Cache,
@@ -61,7 +61,7 @@ enum ClassArg {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum FormatArg {
+pub(crate) enum FormatArg {
     Tty,
     Plain,
     Md,
@@ -69,26 +69,26 @@ enum FormatArg {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum TimeArg {
+pub(crate) enum TimeArg {
     Relative,
     Iso,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum DetectArg {
+pub(crate) enum DetectArg {
     Off,
     Fast,
     Full,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum PreviewArg {
+pub(crate) enum PreviewArg {
     Off,
     Short,
     Full,
 }
 
-fn parse_budget(s: &str) -> Result<Budget, String> {
+pub(crate) fn parse_budget(s: &str) -> Result<Budget, String> {
     if s == "auto" {
         return Ok(Budget::Auto);
     }
@@ -104,182 +104,165 @@ fn parse_budget(s: &str) -> Result<Budget, String> {
     name = "teak",
     disable_version_flag = true,
     args_override_self = true,
-    max_term_width = 100
+    max_term_width = 100,
+    after_help = "Config: ~/.config/teak/config.toml (or $XDG_CONFIG_HOME/teak/config.toml) and the \
+                  nearest .teak.toml in the root or a parent. Flags override the project file; \
+                  the project file overrides the user file."
 )]
-struct Cli {
+pub struct CliArgs {
     /// Directories or files to show (default: the current directory)
     #[arg(value_name = "PATH")]
-    paths: Vec<PathBuf>,
+    pub(crate) paths: Vec<PathBuf>,
 
-    /// Line budget: a number (3 or more), or auto (terminal height - 2)
-    #[arg(short = 'n', long = "lines", value_name = "N|auto", default_value = "100", value_parser = parse_budget, help_heading = "Layout")]
-    lines: Budget,
+    /// Line budget: a number (3 or more), or auto (terminal height - 2) [default: 100]
+    #[arg(short = 'n', long = "lines", value_name = "N|auto", value_parser = parse_budget, help_heading = "Layout")]
+    pub(crate) lines: Option<Budget>,
 
     /// Never open deeper than N
     #[arg(short = 'L', long = "depth", value_name = "N", help_heading = "Layout")]
-    depth: Option<usize>,
+    pub(crate) depth: Option<usize>,
 
     /// All columns (ls -lah style)
     #[arg(short = 'l', long, help_heading = "Layout")]
-    long: bool,
+    pub(crate) long: bool,
 
     /// Display order inside a directory
     #[arg(long, value_enum, value_name = "KEY", help_heading = "Layout")]
-    sort: Option<SortArg>,
+    pub(crate) sort: Option<SortArg>,
 
     /// Spend most of the budget on PATH, keep the context around it
     #[arg(long, value_name = "PATH", help_heading = "Layout")]
-    focus: Option<PathBuf>,
+    pub(crate) focus: Option<PathBuf>,
 
-    /// Smallest group that becomes a series row
-    #[arg(long = "series-min", value_name = "N", default_value_t = 4,
+    /// Smallest group that becomes a series row [default: 4]
+    #[arg(long = "series-min", value_name = "N",
           value_parser = clap::value_parser!(u64).range(2..), help_heading = "Layout")]
-    series_min: u64,
+    pub(crate) series_min: Option<u64>,
 
-    /// Content detection
-    #[arg(
-        long,
-        value_enum,
-        value_name = "MODE",
-        default_value = "full",
-        help_heading = "Content"
-    )]
-    detect: DetectArg,
+    /// Content detection [default: full]
+    #[arg(long, value_enum, value_name = "MODE", help_heading = "Content")]
+    pub(crate) detect: Option<DetectArg>,
 
-    /// Previews
-    #[arg(
-        long,
-        value_enum,
-        value_name = "MODE",
-        default_value = "short",
-        help_heading = "Content"
-    )]
-    preview: PreviewArg,
+    /// Previews [default: short]
+    #[arg(long, value_enum, value_name = "MODE", help_heading = "Content")]
+    pub(crate) preview: Option<PreviewArg>,
 
     /// Find duplicate files: fold copies of visible files
     #[arg(long, help_heading = "Content")]
-    dupes: bool,
+    pub(crate) dupes: bool,
 
     /// List only files whose content does not match the extension
     #[arg(long, help_heading = "Content")]
-    mismatches: bool,
+    pub(crate) mismatches: bool,
 
     /// Do not read or write the type cache
     #[arg(long = "no-cache", help_heading = "Content")]
-    no_cache: bool,
+    pub(crate) no_cache: bool,
 
     /// Add boilerplate templates from DIR (boilerplate/ and generated/)
     #[arg(long, value_name = "DIR", action = ArgAction::Append, help_heading = "Content")]
-    templates: Vec<PathBuf>,
+    pub(crate) templates: Vec<PathBuf>,
 
     /// Use only the templates from --templates
     #[arg(long = "templates-only", help_heading = "Content")]
-    templates_only: bool,
+    pub(crate) templates_only: bool,
 
     /// Write the built-in templates to DIR and exit
     #[arg(long = "dump-templates", value_name = "DIR", help_heading = "Content")]
-    dump_templates: Option<PathBuf>,
+    pub(crate) dump_templates: Option<PathBuf>,
 
     /// Show hidden entries (dotfiles, .git/), folded into the chaff line
     #[arg(short = 'A', long = "almost-all", help_heading = "Filtering")]
-    almost_all: bool,
+    pub(crate) almost_all: bool,
 
     /// Show everything: no chaff folding, no hidden entries, no gitignore
     #[arg(short = 'a', long = "all", help_heading = "Filtering")]
-    all: bool,
+    pub(crate) all: bool,
 
     /// Do not use .gitignore rules
     #[arg(long = "no-gitignore", help_heading = "Filtering")]
-    no_gitignore: bool,
+    pub(crate) no_gitignore: bool,
 
     /// Set the action for all chaff classes
     #[arg(long, value_enum, value_name = "LEVEL", help_heading = "Filtering")]
-    chaff: Option<ActionArg>,
+    pub(crate) chaff: Option<ActionArg>,
 
     /// Show these chaff classes as normal rows
     #[arg(long, value_enum, value_name = "CLASS,…", value_delimiter = ',', action = ArgAction::Append, help_heading = "Filtering")]
-    show: Vec<ClassArg>,
+    pub(crate) show: Vec<ClassArg>,
 
     /// Fold these chaff classes into the chaff line
     #[arg(long, value_enum, value_name = "CLASS,…", value_delimiter = ',', action = ArgAction::Append, help_heading = "Filtering")]
-    fold: Vec<ClassArg>,
+    pub(crate) fold: Vec<ClassArg>,
 
     /// Count these chaff classes only in the footer
     #[arg(long, value_enum, value_name = "CLASS,…", value_delimiter = ',', action = ArgAction::Append, help_heading = "Filtering")]
-    hide: Vec<ClassArg>,
+    pub(crate) hide: Vec<ClassArg>,
 
     /// Do not cross into other file systems
     #[arg(short = 'x', long = "one-file-system", help_heading = "Filtering")]
-    one_file_system: bool,
+    pub(crate) one_file_system: bool,
 
     /// Follow symlinks
     #[arg(long, help_heading = "Filtering")]
-    follow: bool,
+    pub(crate) follow: bool,
 
     /// Output format (default: tty on a terminal, else plain)
     #[arg(long, value_enum, value_name = "FMT", help_heading = "Output")]
-    format: Option<FormatArg>,
+    pub(crate) format: Option<FormatArg>,
 
     /// JSON with every entry (implies --format json)
     #[arg(long = "json-full", help_heading = "Output")]
-    json_full: bool,
+    pub(crate) json_full: bool,
 
-    /// Colors
-    #[arg(
-        long,
-        value_enum,
-        value_name = "WHEN",
-        default_value = "auto",
-        help_heading = "Output"
-    )]
-    color: ColorWhen,
+    /// Colors [default: auto]
+    #[arg(long, value_enum, value_name = "WHEN", help_heading = "Output")]
+    pub(crate) color: Option<ColorWhen>,
 
     /// ASCII glyphs only
     #[arg(long, help_heading = "Output")]
-    ascii: bool,
+    pub(crate) ascii: bool,
 
     /// Output width (default: the terminal width, or 120)
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(8..), help_heading = "Output")]
-    width: Option<u64>,
+    pub(crate) width: Option<u64>,
 
-    /// Age format
-    #[arg(
-        long,
-        value_enum,
-        value_name = "MODE",
-        default_value = "relative",
-        help_heading = "Output"
-    )]
-    time: TimeArg,
+    /// Age format [default: relative]
+    #[arg(long, value_enum, value_name = "MODE", help_heading = "Output")]
+    pub(crate) time: Option<TimeArg>,
 
     /// Sizes in whole bytes
     #[arg(long, help_heading = "Output")]
-    bytes: bool,
+    pub(crate) bytes: bool,
 
     /// Sizes in SI units (base 1000)
     #[arg(long, help_heading = "Output")]
-    si: bool,
+    pub(crate) si: bool,
 
     /// No git status
     #[arg(long = "no-git", help_heading = "Output")]
-    no_git: bool,
+    pub(crate) no_git: bool,
 
     /// Explain the decision for PATH
     #[arg(long, value_name = "PATH", help_heading = "Help")]
-    why: Option<PathBuf>,
+    pub(crate) why: Option<PathBuf>,
 
     /// Print only the header, the type table, and the footer
     #[arg(long, help_heading = "Help")]
-    stats: bool,
+    pub(crate) stats: bool,
 
     /// Walk threads
     #[arg(short = 'j', long = "threads", value_name = "N",
           value_parser = clap::value_parser!(u64).range(1..), help_heading = "Help")]
-    threads: Option<u64>,
+    pub(crate) threads: Option<u64>,
 
     /// Print the version
     #[arg(long, help_heading = "Help")]
-    version: bool,
+    pub(crate) version: bool,
+
+    /// `--show`, `--fold`, and `--hide` in command-line order (FR-36).
+    #[arg(skip)]
+    pub(crate) overrides: Vec<(ChaffClass, Action)>,
 }
 
 /// The resolved options.
@@ -323,6 +306,8 @@ pub struct Opts {
     /// `--no-git`: no git status, column, or header part.
     pub no_git: bool,
     pub threads: Option<usize>,
+    /// Salience weights from the config (FR-67).
+    pub weights: crate::salience::Weights,
 }
 
 /// A bad option value that clap cannot check (exit code 2).
@@ -340,16 +325,29 @@ pub enum Parsed {
     Run(Box<Opts>),
 }
 
-/// Parses the arguments (the first one is the program name).
-pub fn parse_from<I, T>(args: I) -> Result<Parsed, clap::Error>
+/// The arguments before the config files: `--version`, or a run.
+pub enum Args {
+    Version,
+    Run(Box<CliArgs>),
+}
+
+/// The clap command: the source of the help, the completions, and the man
+/// page (FR-69).
+pub fn command() -> clap::Command {
+    CliArgs::command()
+}
+
+/// Parses the arguments (the first one is the program name), without the
+/// config files.
+pub fn parse_args<I, T>(args: I) -> Result<Args, clap::Error>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let matches = Cli::command().try_get_matches_from(args)?;
-    let cli = Cli::from_arg_matches(&matches)?;
+    let matches = CliArgs::command().try_get_matches_from(args)?;
+    let mut cli = CliArgs::from_arg_matches(&matches)?;
     if cli.version {
-        return Ok(Parsed::Version);
+        return Ok(Args::Version);
     }
     // --show, --fold, and --hide apply in command-line order (FR-36).
     let mut overrides: Vec<(usize, ChaffClass, Action)> = Vec::new();
@@ -365,85 +363,66 @@ where
         }
     }
     overrides.sort_by_key(|(i, _, _)| *i);
-    let opts = Opts {
-        paths: if cli.paths.is_empty() {
-            vec![PathBuf::from(".")]
-        } else {
-            cli.paths
-        },
-        budget: cli.lines,
-        depth: cli.depth,
-        sort: match cli.sort {
-            None => SortKey::Default,
-            Some(SortArg::Salience) => SortKey::Salience,
-            Some(SortArg::Name) => SortKey::Name,
-            Some(SortArg::Size) => SortKey::Size,
-            Some(SortArg::Age) => SortKey::Age,
-            Some(SortArg::Type) => SortKey::Type,
-        },
-        series_min: cli.series_min as usize,
-        focus: cli.focus,
-        why: cli.why,
-        stats: cli.stats,
-        long: cli.long,
-        dupes: cli.dupes,
-        detect: match cli.detect {
-            DetectArg::Off => DetectMode::Off,
-            DetectArg::Fast => DetectMode::Fast,
-            // Without the `magika` feature, `full` acts as `fast` (FR-55).
-            DetectArg::Full => DetectMode::Full,
-        },
-        mismatches: cli.mismatches,
-        no_cache: cli.no_cache,
-        templates: cli.templates,
-        templates_only: cli.templates_only,
-        dump_templates: cli.dump_templates,
-        preview: match cli.preview {
-            PreviewArg::Off => PreviewMode::Off,
-            PreviewArg::Short => PreviewMode::Short,
-            PreviewArg::Full => PreviewMode::Full,
-        },
-        chaff: ChaffOpts {
-            almost_all: cli.almost_all,
-            all: cli.all,
-            no_gitignore: cli.no_gitignore,
-            level: cli.chaff.map(action_of),
-            overrides: overrides.into_iter().map(|(_, c, a)| (c, a)).collect(),
-        },
-        one_fs: cli.one_file_system,
-        follow: cli.follow,
-        format: if cli.json_full {
-            Some(Format::Json)
-        } else {
-            cli.format.map(|f| match f {
-                FormatArg::Tty => Format::Tty,
-                FormatArg::Plain => Format::Plain,
-                FormatArg::Md => Format::Md,
-                FormatArg::Json => Format::Json,
-            })
-        },
-        json_full: cli.json_full,
-        color: cli.color,
-        ascii: cli.ascii,
-        width: cli.width.map(|w| w as usize),
-        time: match cli.time {
-            TimeArg::Relative => TimeMode::Relative,
-            TimeArg::Iso => TimeMode::Iso,
-        },
-        units: if cli.bytes {
-            SizeUnits::Bytes
-        } else if cli.si {
-            SizeUnits::Si
-        } else {
-            SizeUnits::Iec
-        },
-        no_git: cli.no_git,
-        threads: cli.threads.map(|t| t as usize),
-    };
-    Ok(Parsed::Run(Box::new(opts)))
+    cli.overrides = overrides.into_iter().map(|(_, c, a)| (c, a)).collect();
+    Ok(Args::Run(Box::new(cli)))
 }
 
-fn action_of(a: ActionArg) -> Action {
+/// Parses the arguments with no config files: flags over the defaults.
+pub fn parse_from<I, T>(args: I) -> Result<Parsed, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    Ok(match parse_args(args)? {
+        Args::Version => Parsed::Version,
+        Args::Run(cli) => Parsed::Run(Box::new(crate::config::ConfigLayers::default().merge(&cli))),
+    })
+}
+
+pub(crate) fn sort_of(s: SortArg) -> SortKey {
+    match s {
+        SortArg::Salience => SortKey::Salience,
+        SortArg::Name => SortKey::Name,
+        SortArg::Size => SortKey::Size,
+        SortArg::Age => SortKey::Age,
+        SortArg::Type => SortKey::Type,
+    }
+}
+
+pub(crate) fn detect_of(d: DetectArg) -> DetectMode {
+    match d {
+        DetectArg::Off => DetectMode::Off,
+        DetectArg::Fast => DetectMode::Fast,
+        // Without the `magika` feature, `full` acts as `fast` (FR-55).
+        DetectArg::Full => DetectMode::Full,
+    }
+}
+
+pub(crate) fn preview_of(p: PreviewArg) -> PreviewMode {
+    match p {
+        PreviewArg::Off => PreviewMode::Off,
+        PreviewArg::Short => PreviewMode::Short,
+        PreviewArg::Full => PreviewMode::Full,
+    }
+}
+
+pub(crate) fn format_of(f: FormatArg) -> Format {
+    match f {
+        FormatArg::Tty => Format::Tty,
+        FormatArg::Plain => Format::Plain,
+        FormatArg::Md => Format::Md,
+        FormatArg::Json => Format::Json,
+    }
+}
+
+pub(crate) fn time_of(t: TimeArg) -> TimeMode {
+    match t {
+        TimeArg::Relative => TimeMode::Relative,
+        TimeArg::Iso => TimeMode::Iso,
+    }
+}
+
+pub(crate) fn action_of(a: ActionArg) -> Action {
     match a {
         ActionArg::Show => Action::Show,
         ActionArg::Dim => Action::Dim,
@@ -452,7 +431,7 @@ fn action_of(a: ActionArg) -> Action {
     }
 }
 
-fn class_of(c: ClassArg) -> ChaffClass {
+pub(crate) fn class_of(c: ClassArg) -> ChaffClass {
     match c {
         ClassArg::Vendor => ChaffClass::Vendor,
         ClassArg::Build => ChaffClass::Build,
