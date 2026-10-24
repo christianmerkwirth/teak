@@ -14,8 +14,8 @@
 # with seed 42 and live in target/bench-data/ (shared with benches/walk.rs).
 #
 # BENCH_IGNORE_FAILURE=1 lets hyperfine time a teak that exits non-zero.
-# The 100k, 1m, magika100, and warmcache cases use --no-cache or
-# --detect full with Magika, which task-3 adds; until then use 10k.
+# warmcache fills the teak cache in target/bench/cache during the warmup
+# runs; the detect stage is then only cache lookups (FR-75).
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
