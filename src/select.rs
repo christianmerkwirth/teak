@@ -450,45 +450,13 @@ impl Planner<'_> {
         if st.chaff.is_empty() {
             return None;
         }
-        let tree = self.inp.tree;
-        let dir_total = self.inp.aggs.get(tree, dir).size;
-        let mut items: Vec<ChaffItem> = st
-            .chaff
-            .iter()
-            .map(|&c| {
-                let a = self.inp.aggs.get(tree, c);
-                ChaffItem {
-                    node: c,
-                    size: a.size,
-                    files: a.files,
-                    large: a.size >= 1 << 20 || (dir_total > 0 && a.size * 10 >= dir_total),
-                }
-            })
-            .collect();
-        // Large items by size (high first), then small items by name.
-        items.sort_by(|a, b| {
-            b.large
-                .cmp(&a.large)
-                .then_with(|| {
-                    if a.large {
-                        b.size.cmp(&a.size)
-                    } else {
-                        Ordering::Equal
-                    }
-                })
-                .then_with(|| a.node.cmp(&b.node))
-        });
-        let chaff_size: u64 = items.iter().map(|i| i.size).sum();
-        let first = chaff_size > dir_total.saturating_sub(chaff_size);
-        Some(Row {
-            depth: depth as u16,
-            last: false,
-            kind: RowKind::Chaff {
-                parent: dir,
-                items,
-                first,
-            },
-        })
+        Some(chaff_row(
+            self.inp.tree,
+            self.inp.aggs,
+            dir,
+            depth,
+            &st.chaff,
+        ))
     }
 
     /// Emits the child rows of the open directory `dir` at `depth`.
@@ -612,6 +580,124 @@ impl Planner<'_> {
             },
         }
     }
+}
+
+/// The chaff row of `dir` at `depth` with the given items: large items by
+/// size (high first), then small items by name. `first` when the chaff is
+/// larger than the rest of the directory (FR-34).
+fn chaff_row(tree: &Tree, aggs: &Aggs, dir: NodeId, depth: usize, nodes: &[NodeId]) -> Row {
+    let dir_total = aggs.get(tree, dir).size;
+    let mut items: Vec<ChaffItem> = nodes
+        .iter()
+        .map(|&c| {
+            let a = aggs.get(tree, c);
+            ChaffItem {
+                node: c,
+                size: a.size,
+                files: a.files,
+                large: a.size >= 1 << 20 || (dir_total > 0 && a.size * 10 >= dir_total),
+            }
+        })
+        .collect();
+    items.sort_by(|a, b| {
+        b.large
+            .cmp(&a.large)
+            .then_with(|| {
+                if a.large {
+                    b.size.cmp(&a.size)
+                } else {
+                    Ordering::Equal
+                }
+            })
+            .then_with(|| a.node.cmp(&b.node))
+    });
+    let chaff_size: u64 = items.iter().map(|i| i.size).sum();
+    let first = chaff_size > dir_total.saturating_sub(chaff_size);
+    Row {
+        depth: depth as u16,
+        last: false,
+        kind: RowKind::Chaff {
+            parent: dir,
+            items,
+            first,
+        },
+    }
+}
+
+/// Takes the rows of files out of the view after a content check gave them
+/// a class that folds or hides (FR-38 to FR-40). A folded file joins the
+/// chaff line of its directory; a hidden one counts only in the footer. A
+/// move takes away one row and adds at most one chaff line, so the budget
+/// holds. The footer is made again.
+pub fn apply_content(
+    view: &mut View,
+    tree: &Tree,
+    aggs: &Aggs,
+    tags: &[ChaffTag],
+    moved: &[NodeId],
+) {
+    if moved.is_empty() {
+        return;
+    }
+    let budget = view.budget;
+    let rows = &mut view.rows;
+    if matches!(rows.last().map(|r| &r.kind), Some(RowKind::Footer { .. })) {
+        rows.pop();
+    }
+    for &id in moved {
+        let Some(i) = rows
+            .iter()
+            .position(|r| matches!(r.kind, RowKind::Entry { node, .. } if node == id))
+        else {
+            continue;
+        };
+        let depth = rows[i].depth as usize;
+        rows.remove(i);
+        // The children of the parent: the rows at `depth` and below, around `i`.
+        let start = (1..=i)
+            .rev()
+            .find(|&k| (rows[k - 1].depth as usize) < depth)
+            .unwrap_or(i);
+        let end = (i..rows.len())
+            .find(|&k| (rows[k].depth as usize) < depth)
+            .unwrap_or(rows.len());
+        let parent = tree.node(id).parent;
+        let mut nodes: Vec<NodeId> = Vec::new();
+        if let Some(c) = (start..end).find(|&k| {
+            rows[k].depth as usize == depth
+                && matches!(rows[k].kind, RowKind::Chaff { parent: p, .. } if p == parent)
+        }) && let RowKind::Chaff { items, .. } = rows.remove(c).kind
+        {
+            nodes.extend(items.iter().map(|it| it.node));
+        }
+        let mut end = end - usize::from(!nodes.is_empty());
+        if tags[id as usize].action == Action::Fold {
+            nodes.push(id);
+        }
+        if !nodes.is_empty() {
+            let row = chaff_row(tree, aggs, parent, depth, &nodes);
+            let at = if matches!(row.kind, RowKind::Chaff { first: true, .. }) {
+                start
+            } else {
+                end
+            };
+            rows.insert(at, row);
+            end += 1;
+        }
+        for row in &mut rows[start..end] {
+            if row.depth as usize == depth {
+                row.last = false;
+            }
+        }
+        if let Some(k) = (start..end)
+            .rev()
+            .find(|&k| rows[k].depth as usize == depth)
+        {
+            rows[k].last = true;
+        }
+    }
+    let footer = footer(tree, tags, rows, budget);
+    rows.push(footer);
 }
 
 /// The footer for `rows` (the header and the rows before the footer): the

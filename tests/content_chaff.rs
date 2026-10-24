@@ -72,13 +72,17 @@ fn fr38_every_marker_counts_and_case_matters() {
         "auto-generated",
         "This file was automatically generated",
     ];
+    // Names with no digits, so the files do not form a series (FR-44).
     for (i, m) in markers.iter().enumerate() {
-        fx.file(&format!("m{i}.txt"), format!("header\n{m}\nbody\n"));
+        fx.file(
+            &format!("{}.txt", support::word(i)),
+            format!("header\n{m}\nbody\n"),
+        );
     }
     fx.file("lower.txt", "header\ndo not edit\nbody\n");
     let s = scan(fx.path(), &[]);
     for i in 0..markers.len() {
-        let rel = format!("m{i}.txt");
+        let rel = format!("{}.txt", support::word(i));
         assert_eq!(class(&s, &rel), Some(ChaffClass::Generated), "{rel}");
     }
     assert_eq!(class(&s, "lower.txt"), None);

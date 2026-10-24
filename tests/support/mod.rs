@@ -77,8 +77,9 @@ impl Fixture {
         self
     }
 
-    /// Writes a file of `len` bytes. Above 64 KiB the file is sparse, so
-    /// large sizes cost no disk space.
+    /// Writes a file of `len` bytes: lines of 63 `x` and a line break, so
+    /// the content checks see plain text, not a minified file (FR-39).
+    /// Above 64 KiB the file is sparse, so large sizes cost no disk space.
     pub fn sized(&self, path: &str, len: u64) -> &Self {
         let p = self.at(path);
         if let Some(parent) = p.parent() {
@@ -87,8 +88,10 @@ impl Fixture {
         let f = fs::File::create(&p).expect("create file");
         if len <= 64 * 1024 {
             use std::io::Write;
-            (&f).write_all(&vec![b'x'; len as usize])
-                .expect("write file");
+            let bytes: Vec<u8> = (0..len)
+                .map(|i| if i % 64 == 63 { b'\n' } else { b'x' })
+                .collect();
+            (&f).write_all(&bytes).expect("write file");
         } else {
             f.set_len(len).expect("set file length");
         }
@@ -459,7 +462,7 @@ pub fn scan(dir: &Path, args: &[&str]) -> teak::Scan {
         teak::cli::Budget::Lines(n) => n,
         teak::cli::Budget::Auto => 100,
     };
-    let mut cx = teak::Context::new(&opts);
+    let mut cx = teak::Context::new(&opts).expect("valid templates");
     teak::build(dir, &opts, &mut cx, budget, SCAN_TIME as i64).expect("scan")
 }
 

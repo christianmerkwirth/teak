@@ -150,6 +150,18 @@ struct Cli {
     #[arg(long, help_heading = "Content")]
     mismatches: bool,
 
+    /// Add boilerplate templates from DIR (boilerplate/ and generated/)
+    #[arg(long, value_name = "DIR", action = ArgAction::Append, help_heading = "Content")]
+    templates: Vec<PathBuf>,
+
+    /// Use only the templates from --templates
+    #[arg(long = "templates-only", help_heading = "Content")]
+    templates_only: bool,
+
+    /// Write the built-in templates to DIR and exit
+    #[arg(long = "dump-templates", value_name = "DIR", help_heading = "Content")]
+    dump_templates: Option<PathBuf>,
+
     /// Show hidden entries (dotfiles, .git/), folded into the chaff line
     #[arg(short = 'A', long = "almost-all", help_heading = "Filtering")]
     almost_all: bool,
@@ -248,6 +260,9 @@ pub struct Opts {
     pub preview: PreviewMode,
     /// `--mismatches`: the list view.
     pub mismatches: bool,
+    pub templates: Vec<PathBuf>,
+    pub templates_only: bool,
+    pub dump_templates: Option<PathBuf>,
     pub chaff: ChaffOpts,
     pub one_fs: bool,
     pub follow: bool,
@@ -324,6 +339,9 @@ where
             DetectArg::Full => DetectMode::Full,
         },
         mismatches: cli.mismatches,
+        templates: cli.templates,
+        templates_only: cli.templates_only,
+        dump_templates: cli.dump_templates,
         preview: match cli.preview {
             PreviewArg::Off => PreviewMode::Off,
             PreviewArg::Short => PreviewMode::Short,

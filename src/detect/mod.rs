@@ -67,6 +67,7 @@ pub mod fast {
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use crate::chaff::{ChaffClass, ChaffTag};
 use crate::tree::{Kind, Node, NodeId, Tree};
 use crate::view::{RowKind, View};
 
@@ -567,7 +568,9 @@ impl Detector {
                 .filter(|&(l, text)| !text && by_ext.is_some_and(|e| same_type(e, l)));
             let info = if let Some((l, _)) = agreed {
                 TypeInfo::new(l, Source::Magic)
-            } else if m.generic {
+            } else if m.generic || (!label(m.label).text && magic::looks_like_text(&m.head)) {
+                // A binary label for text is a model error (a run of `x`
+                // comes back as `iso`).
                 fast_only(name, Some(&m.head))
             } else {
                 from_model(name, m.label, m.score)
@@ -608,12 +611,37 @@ fn from_model(name: &[u8], content: LabelId, score: f32) -> TypeInfo {
     t
 }
 
-/// Types the files of the visible rows, and marks secrets.
-pub fn run(view: &View, tree: &mut Tree, det: &mut Detector) -> HashMap<NodeId, TypeInfo> {
+/// The result of [`run`].
+pub struct Detected {
+    /// The types of the files in the visible rows.
+    pub types: HashMap<NodeId, TypeInfo>,
+    /// Text files with their own row (or named in a chaff line) whose
+    /// content detection read: the files for the content checks (FR-42).
+    pub read_text: Vec<NodeId>,
+}
+
+/// Types the files of the visible rows, and marks secrets. Files that are
+/// boilerplate by name and named in a chaff line get typed too, so the
+/// template check can label them.
+pub fn run(view: &View, tree: &mut Tree, tags: &[ChaffTag], det: &mut Detector) -> Detected {
     let mut ids: Vec<NodeId> = Vec::new();
+    let mut entries = std::collections::HashSet::new();
     for row in &view.rows {
         match &row.kind {
-            RowKind::Entry { node, .. } if !tree.node(*node).is_dir() => ids.push(*node),
+            RowKind::Entry { node, .. } if !tree.node(*node).is_dir() => {
+                ids.push(*node);
+                entries.insert(*node);
+            }
+            RowKind::Chaff { items, .. } => {
+                for item in items {
+                    let boilerplate =
+                        tags[item.node as usize].class == Some(ChaffClass::Boilerplate);
+                    if boilerplate && !tree.node(item.node).is_dir() {
+                        ids.push(item.node);
+                        entries.insert(item.node);
+                    }
+                }
+            }
             // Small series: every member; large ones: first, middle, last.
             RowKind::Series { series, .. } => {
                 let m = &series.members;
@@ -626,15 +654,19 @@ pub fn run(view: &View, tree: &mut Tree, det: &mut Detector) -> HashMap<NodeId, 
             _ => {}
         }
     }
-    let mut out = HashMap::new();
+    let mut types = HashMap::new();
+    let mut read_text = Vec::new();
     for id in ids {
         let t = det.type_file(tree, id, true);
         if t.secret {
             tree.nodes[id as usize].flags |= crate::tree::flag::SECRET;
         }
-        out.insert(id, t.info);
+        if t.read && t.info.is_text && entries.contains(&id) {
+            read_text.push(id);
+        }
+        types.insert(id, t.info);
     }
-    out
+    Detected { types, read_text }
 }
 
 /// `--mismatches`: types every regular file that is not hidden, and gives

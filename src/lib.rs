@@ -154,6 +154,8 @@ pub struct Scan {
     /// Detected types of the visible files.
     pub types: HashMap<NodeId, TypeInfo>,
     pub view: View,
+    /// Template labels by `ChaffTag::label` - 1, for `LICENSE (MIT)`.
+    pub template_labels: Vec<String>,
 }
 
 impl Scan {
@@ -162,6 +164,14 @@ impl Scan {
             .get(&id)
             .copied()
             .unwrap_or_else(|| TypeInfo::new(self.labels[id as usize], detect::Source::Ext))
+    }
+
+    /// The template label of a node, for example `MIT`.
+    pub fn template_label(&self, id: NodeId) -> Option<&str> {
+        let l = self.tags[id as usize].label as usize;
+        l.checked_sub(1)
+            .and_then(|i| self.template_labels.get(i))
+            .map(String::as_str)
     }
 }
 
@@ -179,17 +189,31 @@ fn timer(_name: &'static str) -> NoTimer {
     NoTimer
 }
 
-/// What all roots of one run share: the detector with its Magika session.
+/// What all roots of one run share: the detector with its Magika session,
+/// and the template table.
 pub struct Context {
     pub detector: detect::Detector,
+    pub templates: chaff::templates::Templates,
 }
 
 impl Context {
-    pub fn new(opts: &Opts) -> Context {
-        Context {
+    /// Fails when a `--templates` directory cannot be read.
+    pub fn new(opts: &Opts) -> Result<Context, cli::UsageError> {
+        Ok(Context {
             detector: detect::Detector::new(opts.detect),
-        }
+            templates: chaff::templates::Templates::for_opts(&opts.templates, opts.templates_only)?,
+        })
     }
+}
+
+/// True when the content checks run: not with `--detect off` (no content
+/// reads), and not with `TEAK_TEST_NO_CONTENT_CHECKS=1`.
+fn checks_on(opts: &Opts) -> bool {
+    #[cfg(feature = "test-hooks")]
+    if io::hooks::content_checks_off() {
+        return false;
+    }
+    opts.detect != detect::DetectMode::Off
 }
 
 /// Scans one root and builds its view.
@@ -215,11 +239,12 @@ pub fn build(
             scan_time,
         )?
     };
-    let tags = {
+    let classifier = chaff::Classifier::new(&tree, &opts.chaff, &cx.templates);
+    let mut tags = {
         let _t = timer("chaff");
-        chaff::Classifier::new(&tree, &opts.chaff).classify_names(&tree)
+        classifier.classify_names(&tree)
     };
-    let aggs = {
+    let mut aggs = {
         let _t = timer("aggregate");
         aggregate::compute(&tree, |id| chaff::is_hidden(&tags, id))
     };
@@ -247,9 +272,10 @@ pub fn build(
             labels,
             types: found.into_iter().collect(),
             view,
+            template_labels: cx.templates.labels(),
         });
     }
-    let view = {
+    let mut view = {
         let _t = timer("select");
         let scores = salience::score(
             &salience::ScoreInputs {
@@ -275,17 +301,49 @@ pub fn build(
             },
         )
     };
-    let types = {
+    let detected = {
         let _t = timer("detect");
-        detect::run(&view, &mut tree, &mut cx.detector)
+        detect::run(&view, &mut tree, &tags, &mut cx.detector)
     };
+    if checks_on(opts) {
+        let _t = timer("checks");
+        let mut moved = Vec::new();
+        for &id in &detected.read_text {
+            let tag = tags[id as usize];
+            let named = tag.class == Some(chaff::ChaffClass::Boilerplate);
+            if tag.class.is_some() && !named {
+                continue;
+            }
+            let Ok(head) = io::read_head(&tree.path(id), chaff::content::READ_MAX) else {
+                continue;
+            };
+            let size = tree.node(id).size;
+            if named {
+                if let Some(label) = classifier.template_label(&head, size) {
+                    tags[id as usize].label = label;
+                }
+                continue;
+            }
+            if let Some(tag) = classifier.classify_content(&tree, id, &head, size) {
+                tags[id as usize] = tag;
+                if matches!(tag.action, chaff::Action::Fold | chaff::Action::Hide) {
+                    moved.push(id);
+                }
+            }
+        }
+        if moved.iter().any(|&id| chaff::is_hidden(&tags, id)) {
+            aggs = aggregate::compute(&tree, |id| chaff::is_hidden(&tags, id));
+        }
+        select::apply_content(&mut view, &tree, &aggs, &tags, &moved);
+    }
     Ok(Scan {
         tree,
         tags,
         aggs,
         labels,
-        types,
+        types: detected.types,
         view,
+        template_labels: cx.templates.labels(),
     })
 }
 
@@ -306,7 +364,22 @@ pub fn run(opts: &Opts, env: &Env, out: &mut impl Write, err: &mut impl Write) -
     let set = settings(opts, env);
     let style = Style::new(set.color, env.ls_colors.as_deref());
     let lopts = layout_opts(opts, &set);
-    let mut cx = Context::new(opts);
+    if let Some(dir) = &opts.dump_templates {
+        return match chaff::templates::Templates::dump(dir) {
+            Ok(()) => 0,
+            Err(e) => {
+                let _ = writeln!(err, "teak: {e}");
+                2
+            }
+        };
+    }
+    let mut cx = match Context::new(opts) {
+        Ok(cx) => cx,
+        Err(e) => {
+            let _ = writeln!(err, "teak: {e}");
+            return 2;
+        }
+    };
     let mut code = 0;
     for path in &opts.paths {
         match build(path, opts, &mut cx, set.budget, env.scan_time) {

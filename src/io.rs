@@ -94,6 +94,7 @@ impl magika::SyncInput for MagikaInput {
 /// Test signals. Only in builds with the `test-hooks` feature.
 ///
 /// - `TEAK_TEST_READ_DELAY_MS`: sleep this long on each content read.
+/// - `TEAK_TEST_NO_CONTENT_CHECKS=1`: no content checks.
 /// - `TEAK_TEST_REPORT`: [`write_report`] writes the read counters and stage
 ///   times to this file as JSON.
 #[cfg(feature = "test-hooks")]
@@ -109,6 +110,11 @@ pub mod hooks {
     pub(crate) fn count_read(path: &Path, bytes: u64) {
         let mut reads = READS.lock().unwrap_or_else(|e| e.into_inner());
         *reads.entry(path.to_path_buf()).or_default() += bytes;
+    }
+
+    /// `TEAK_TEST_NO_CONTENT_CHECKS=1`: the content checks do not run.
+    pub fn content_checks_off() -> bool {
+        std::env::var("TEAK_TEST_NO_CONTENT_CHECKS").is_ok_and(|v| v == "1")
     }
 
     /// Reads the env var on each call, so tests can change it at run time.

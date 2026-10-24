@@ -1,5 +1,6 @@
 //! Chaff: minor and boilerplate entries, folded into one line per directory.
 
+pub mod content;
 pub mod gitattributes;
 pub mod gitignore;
 pub mod packs;
@@ -103,7 +104,7 @@ pub struct ChaffTag {
     pub class: Option<ChaffClass>,
     pub action: Action,
     pub source: Source,
-    /// A label id for the chaff line, for example `MIT` (task-3); 0 is none.
+    /// A template id (index + 1), for a label like `LICENSE (MIT)`; 0 is none.
     pub label: u16,
 }
 
@@ -140,6 +141,7 @@ pub struct ChaffOpts {
 
 pub struct Classifier<'a> {
     opts: &'a ChaffOpts,
+    templates: &'a templates::Templates,
 }
 
 /// The largest rule file that teak reads.
@@ -158,8 +160,43 @@ struct Frame {
 }
 
 impl<'a> Classifier<'a> {
-    pub fn new(_tree: &Tree, opts: &'a ChaffOpts) -> Classifier<'a> {
-        Classifier { opts }
+    pub fn new(
+        _tree: &Tree,
+        opts: &'a ChaffOpts,
+        templates: &'a templates::Templates,
+    ) -> Classifier<'a> {
+        Classifier { opts, templates }
+    }
+
+    /// The tag from a content check (generated, minified, or a template),
+    /// for a text file with no class from its name.
+    ///
+    /// Pre: `head` came from `io::read_head` with [`content::READ_MAX`].
+    pub fn classify_content(
+        &self,
+        tree: &Tree,
+        id: NodeId,
+        head: &[u8],
+        size: u64,
+    ) -> Option<ChaffTag> {
+        let (class, label) = content::check(head, size, self.templates)?;
+        Some(self.content_tag(tree, id, class, label))
+    }
+
+    /// The label for a file that is boilerplate by its name, when its text
+    /// is a known template (`.gitignore (gitignore-Rust)`). The class stays.
+    pub fn template_label(&self, head: &[u8], size: u64) -> Option<u16> {
+        content::template(head, size, self.templates).map(|(_, id)| id)
+    }
+
+    /// The tag for a content class, as a check or the type cache gives it.
+    pub fn content_tag(&self, tree: &Tree, id: NodeId, class: ChaffClass, label: u16) -> ChaffTag {
+        ChaffTag {
+            class: Some(class),
+            action: self.action(Some(class), tree.is_dotfile(id)),
+            source: Source::Content,
+            label,
+        }
     }
 
     fn gitignore_on(&self) -> bool {

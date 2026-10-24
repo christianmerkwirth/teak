@@ -458,6 +458,9 @@ impl Cx<'_> {
         if n.is_dir() {
             name.push('/');
         }
+        if let Some(l) = self.scan.template_label(node) {
+            let _ = write!(name, " ({l})");
+        }
         let info = self.scan.type_of(node);
         let group = if n.is_dir() {
             TypeGroup::Unknown
@@ -813,6 +816,9 @@ impl Cx<'_> {
             let mut text = escape(tree.name(item.node));
             if n.is_dir() {
                 text.push('/');
+            }
+            if let Some(l) = self.scan.template_label(item.node) {
+                let _ = write!(text, " ({l})");
             }
             let mut parts = vec![Span {
                 text: text.clone(),
