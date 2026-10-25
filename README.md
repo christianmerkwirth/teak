@@ -27,10 +27,50 @@ teak/  61G · 1,298,465 files · rust crate
 
 teak runs on Linux (x86_64, aarch64) and macOS (Apple silicon, Intel).
 
-> **Note:** teak has no release yet. Until the first release, build it from
-> source. The prebuilt binaries, Homebrew, and crates.io come with v0.1.0.
+### Prebuilt binaries
 
-### From source (works now)
+The installer script downloads the right archive for your machine and puts
+`teak` into `~/.cargo/bin`:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/christianmerkwirth/teak/releases/latest/download/teak-installer.sh | sh
+```
+
+The script also adds `~/.cargo/bin` to your `PATH`, if it is not there yet.
+Open a new shell, then check the install:
+
+```sh
+teak --version    # teak 0.1.0 (magika: on)
+```
+
+You can also download an archive from the
+[releases page](https://github.com/christianmerkwirth/teak/releases) and
+unpack it yourself:
+
+```sh
+tar -xJf teak-x86_64-unknown-linux-gnu.tar.xz
+install -m 755 teak-x86_64-unknown-linux-gnu/teak ~/.local/bin/
+```
+
+The archive names are `teak-<target>.tar.xz`, with these targets:
+
+| Machine | Target |
+|---|---|
+| Linux x86_64 | `x86_64-unknown-linux-gnu` |
+| Linux ARM 64-bit | `aarch64-unknown-linux-gnu` |
+| macOS, Apple silicon | `aarch64-apple-darwin` |
+| macOS, Intel | `x86_64-apple-darwin` |
+
+Each archive holds the binary, the bash, zsh, and fish completions, and the
+man page `teak.1`. A `.sha256` file is next to each archive.
+
+The macOS binaries are not signed. If you download an archive with a web
+browser, macOS blocks the binary. To allow it, run
+`xattr -d com.apple.quarantine teak` once. The installer script and `curl`
+downloads do not have this problem.
+
+### From source
 
 You need:
 
@@ -56,11 +96,7 @@ cargo install --locked --path .
 ```
 
 Both commands put the binary into `~/.cargo/bin`. rustup adds that directory
-to your `PATH`. Check the install:
-
-```sh
-teak --version    # teak 0.1.0 (magika: on)
-```
+to your `PATH`.
 
 To build with no network access, turn Magika off. teak then types files by
 magic bytes and file names:
@@ -75,48 +111,7 @@ To try teak without an install, run it from the checkout:
 cargo run --release -- -n 40 ~/some/dir
 ```
 
-### Prebuilt binaries (from v0.1.0)
-
-The installer script downloads the right archive for your machine and puts
-`teak` into `~/.cargo/bin`:
-
-```sh
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/christianmerkwirth/teak/releases/latest/download/teak-installer.sh | sh
-```
-
-With Homebrew:
-
-```sh
-brew install christianmerkwirth/tap/teak
-```
-
-With Cargo, from crates.io:
-
-```sh
-cargo install --locked teak
-```
-
-You can also download an archive from the
-[releases page](https://github.com/christianmerkwirth/teak/releases) and
-unpack it yourself:
-
-```sh
-tar -xJf teak-x86_64-unknown-linux-gnu.tar.xz
-install -m 755 teak-x86_64-unknown-linux-gnu/teak ~/.local/bin/
-```
-
-The archive names are `teak-<target>.tar.xz`, with these targets:
-
-| Machine | Target |
-|---|---|
-| Linux x86_64 | `x86_64-unknown-linux-gnu` |
-| Linux ARM 64-bit | `aarch64-unknown-linux-gnu` |
-| macOS, Apple silicon | `aarch64-apple-darwin` |
-| macOS, Intel | `x86_64-apple-darwin` |
-
-Each archive holds the binary, the bash, zsh, and fish completions, and the
-man page `teak.1`. A `.sha256` file is next to each archive.
+teak is not on crates.io yet, so `cargo install teak` does not work.
 
 ### Intel macOS
 
@@ -127,9 +122,8 @@ and `teak --version` prints `magika: off`. You do not need a special flag.
 ### Uninstall
 
 ```sh
-cargo uninstall teak        # after cargo install
-brew uninstall teak         # after brew install
 rm ~/.cargo/bin/teak        # after the installer script
+cargo uninstall teak        # after cargo install
 ```
 
 Then remove the type cache: `~/.cache/teak/` on Linux,

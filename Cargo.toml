@@ -110,9 +110,7 @@ strip = true
 [workspace.metadata.dist]
 cargo-dist-version = "0.32.0"
 ci = "github"
-installers = ["shell", "homebrew"]
-tap = "christianmerkwirth/homebrew-tap"
-publish-jobs = ["homebrew"]
+installers = ["shell"]
 # FR-68/FR-69 checks on each OS after the release: release-check.yml.
 post-announce-jobs = ["./release-check"]
 targets = [

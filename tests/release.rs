@@ -173,8 +173,7 @@ fn fr68_dist_builds_the_four_targets() {
         assert!(targets.contains(&t), "{t} in {targets:?}");
     }
     let installers = strings(&d["installers"]);
-    assert!(installers.contains(&"homebrew"), "{installers:?}");
-    assert!(d.get("tap").is_some(), "a Homebrew tap");
+    assert!(installers.contains(&"shell"), "{installers:?}");
     assert!(
         manifest_dir()
             .join(".github/workflows/release.yml")

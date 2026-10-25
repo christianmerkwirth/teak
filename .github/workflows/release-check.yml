@@ -1,5 +1,6 @@
 # FR-68 and FR-69 after a release: each archive runs `teak --version` on its
-# own OS and holds the completions and the man page, and `brew install` works.
+# own OS and holds the completions and the man page, and the installer script
+# works.
 #
 # release.yml (cargo-dist) calls this workflow after it announces the release
 # (`post-announce-jobs` in Cargo.toml). Run it by hand for an existing tag.
@@ -63,14 +64,24 @@ jobs:
         working-directory: teak-${{ matrix.target }}
         run: ./teak -n 10 --format json . | jq -e '.schema_version == 1'
 
-  brew:
-    name: brew (${{ matrix.runner }})
+  installer:
+    name: installer (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-14, macos-15-intel]
+        runner: [ubuntu-22.04, ubuntu-24.04-arm, macos-14, macos-15-intel]
     runs-on: ${{ matrix.runner }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PLAN: ${{ inputs.plan }}
+      TAG_INPUT: ${{ inputs.tag }}
     steps:
-      - run: brew install "${{ github.repository_owner }}/tap/teak"
-      - run: teak --version
-      - run: man -w teak || true
+      - name: Release tag
+        run: |
+          if [ -n "$TAG_INPUT" ]; then tag="$TAG_INPUT"; else tag=$(echo "$PLAN" | jq -r .announcement_tag); fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      - name: Run the installer script
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern teak-installer.sh
+          CARGO_HOME="$RUNNER_TEMP/cargo" sh teak-installer.sh --no-modify-path
+          "$RUNNER_TEMP/cargo/bin/teak" --version
