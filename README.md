@@ -201,9 +201,10 @@ key gives one warning.
 
 ## Completions and man page
 
-The files are in `assets/` in the repo, and at the top level of each release
-archive. Copy the ones for your shell. These commands run from a checkout; in
-an unpacked archive, leave out `assets/`:
+The files are in `assets/` in the repo, and in the `teak-<target>/` folder of
+each release archive. Copy the ones for your shell. These commands run from a
+checkout; in an unpacked archive, run them in that folder and leave out
+`assets/`:
 
 ```sh
 # bash (needs the bash-completion package)

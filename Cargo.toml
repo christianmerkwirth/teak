@@ -102,6 +102,10 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
+# cargo-dist builds the release archives with this profile.
+[profile.dist]
+inherits = "release"
+
 # The crate is its own workspace, so cargo-dist can keep its settings here.
 [workspace]
 
