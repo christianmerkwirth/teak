@@ -25,7 +25,7 @@ jobs:
       # tests/safety.rs runs `cargo tree --offline` on the default graph,
       # which needs the crates that a --no-default-features build skips.
       - run: cargo fetch --locked
-      - run: cargo test --locked ${{ matrix.features }}
+      - run: cargo test --locked --no-fail-fast ${{ matrix.features }}
 
   checks:
     name: checks (${{ matrix.os }})

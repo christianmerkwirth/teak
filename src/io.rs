@@ -156,6 +156,8 @@ impl magika::SyncInput for MagikaInput {
 ///
 /// - `TEAK_TEST_READ_DELAY_MS`: sleep this long on each content read.
 /// - `TEAK_TEST_NO_CONTENT_CHECKS=1`: no content checks.
+/// - `TEAK_TEST_DETECT_TIME_MS`: the time cap of content detection, in
+///   place of 2 s, so a slow CI machine does not reach it.
 /// - `TEAK_TEST_REPORT`: [`write_report`] writes the read counters and stage
 ///   times to this file as JSON.
 #[cfg(feature = "test-hooks")]
@@ -189,6 +191,14 @@ pub mod hooks {
     /// `TEAK_TEST_NO_CONTENT_CHECKS=1`: the content checks do not run.
     pub fn content_checks_off() -> bool {
         std::env::var("TEAK_TEST_NO_CONTENT_CHECKS").is_ok_and(|v| v == "1")
+    }
+
+    /// `TEAK_TEST_DETECT_TIME_MS`: the detection time cap, if set.
+    pub(crate) fn detect_time() -> Option<Duration> {
+        std::env::var("TEAK_TEST_DETECT_TIME_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(Duration::from_millis)
     }
 
     /// Reads the env var on each call, so tests can change it at run time.

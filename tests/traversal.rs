@@ -242,6 +242,10 @@ fn fr06_one_file_system_stops_at_a_mount_point() {
 // FR-07: Odd names
 
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS file systems reject non-UTF-8 names"
+)]
 fn fr07_non_utf8_name_is_escaped() {
     let fx = Fixture::new();
     let name = std::ffi::OsStr::from_bytes(&[0xFF, 0x61]);

@@ -680,6 +680,11 @@ impl Detector {
 
     /// Starts the cap for one root.
     pub fn begin(&mut self, cap: Cap) {
+        #[cfg(feature = "test-hooks")]
+        let cap = Cap {
+            time: crate::io::hooks::detect_time().unwrap_or(cap.time),
+            ..cap
+        };
         self.cap = cap;
         self.start = Instant::now();
         self.typed = 0;
