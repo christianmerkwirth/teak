@@ -371,6 +371,10 @@ fn fr64_header_and_types_match_the_tree() {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS file systems reject non-UTF-8 names"
+)]
 fn fr64_non_utf8_names_use_the_text_escape() {
     let fx = Fixture::new();
     let name = std::ffi::OsStr::from_bytes(b"b\xFFc.txt");

@@ -39,3 +39,5 @@ Added P4 in three TDD slices: the `md` and `json` formats with `--json-full` and
 - `LICENSE` is untracked. dist puts it into the archives, so it must be committed before the first release. `include` in Cargo.toml leaves it out of the crate.
 - After a CLI change, run `cargo run --example gen_assets -- assets` (the release test fails until then).
 - Publish (2026-10-25): the `OWNER` placeholders became `christianmerkwirth` (tap `christianmerkwirth/homebrew-tap`), and the repo went public as `christianmerkwirth/teak`.
+- Release prep (2026-10-25): the user dropped Homebrew for v0.1.0 (FR-68's `brew install` criterion is out). The dist config has only the shell installer; `release-check.yml` runs the installer script on the four OSes instead of `brew install`. crates.io publishing waits too.
+- CI fixes (2026-10-25): the type cache guard now compares the real cache path (macOS `/var` → `/private/var` wrote the cache inside the tree); the thread-count property test uses `--detect fast` (the 2 s detection cap is a wall-clock limit); the test job runs `cargo fetch` first.

@@ -24,7 +24,10 @@ fn fr65_four_runs_give_the_same_bytes_in_each_format() {
         let outs: Vec<String> = ["1", "1", "8", "8"]
             .into_iter()
             .map(|j| {
-                let mut args = vec!["t", "-n", "60", "-j", j];
+                // Fast detection: Magika in a debug build on a slow CI
+                // machine can reach the 2 s detection cap (FR-51), a
+                // wall-clock limit, and then the output depends on timing.
+                let mut args = vec!["t", "-n", "60", "-j", j, "--detect", "fast"];
                 args.extend(format);
                 let out = run_in(fx.path(), &args);
                 assert_eq!(out.code, Some(0), "{out:?}");

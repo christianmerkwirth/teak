@@ -547,6 +547,10 @@ pub fn git(dir: &Path, args: &[&str]) {
             "init.defaultBranch=main",
             "-c",
             "core.fsmonitor=false",
+            "-c",
+            "gc.auto=0",
+            "-c",
+            "maintenance.auto=false",
         ])
         .args(args)
         .current_dir(dir)

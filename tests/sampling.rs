@@ -146,7 +146,13 @@ fn fr51_magika_types_at_most_300_files_per_run() {
             fx.file(&format!("d{d}/{}", support::word(i)), corpus("tool"));
         }
     }
-    let (out, report) = support::run_report(fx.path(), &["-L", "1", "--detect", "full"]);
+    // Magika in a debug build on a slow CI machine can reach the 2 s cap
+    // before the 300 Magika files; this test is about the Magika sub-cap.
+    let (out, report) = support::run_report_env(
+        fx.path(),
+        &["-L", "1", "--detect", "full"],
+        &[("TEAK_TEST_DETECT_TIME_MS", "60000")],
+    );
     assert_eq!(out.code, Some(0), "{out:?}");
     let magika = report.counts.get("magika").copied().unwrap_or(0);
     assert!((1..=300).contains(&magika), "{magika} Magika calls");

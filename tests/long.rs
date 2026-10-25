@@ -43,9 +43,18 @@ fn fr24_long_view_shows_mode_owner_and_group() {
         "{}",
         out.stdout
     );
+    // Linux symlinks are always `lrwxrwxrwx`; macOS symlinks have their
+    // own mode bits, so compare with the mode from lstat.
+    let link_mode = std::os::unix::fs::PermissionsExt::mode(
+        &std::fs::symlink_metadata(fx.abs("link"))
+            .unwrap()
+            .permissions(),
+    );
+    let want = teak::layout::mode_string(teak::tree::Kind::Symlink, link_mode);
+    assert!(want.starts_with('l'), "{want}");
     assert!(
-        cells(out.must_row("link")).contains(&"lrwxrwxrwx"),
-        "{}",
+        cells(out.must_row("link")).contains(&want.as_str()),
+        "{want}: {}",
         out.stdout
     );
     let docs = cells(out.must_row("docs/"));

@@ -261,13 +261,37 @@ impl Context {
             return;
         };
         let dir = std::path::absolute(cache.dir()).unwrap_or_else(|_| cache.dir().to_path_buf());
+        // A symlink in the cache path (macOS: /var → /private/var) hides
+        // the match, so compare the real path too.
+        let real_dir = real_path(&dir);
         let inside = roots.iter().any(|r| {
             let abs = std::path::absolute(r).unwrap_or_else(|_| r.clone());
             let real = std::fs::canonicalize(r).unwrap_or_else(|_| abs.clone());
-            dir.starts_with(&abs) || dir.starts_with(&real)
+            [&dir, &real_dir]
+                .iter()
+                .any(|d| d.starts_with(&abs) || d.starts_with(&real))
         });
         if !inside {
             let _ = cache.save();
+        }
+    }
+}
+
+/// The real path of `path`, which may not exist yet: the nearest existing
+/// ancestor with its symlinks resolved, then the rest of the path.
+fn real_path(path: &Path) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut base = path;
+    loop {
+        if let Ok(real) = std::fs::canonicalize(base) {
+            return rest.iter().rev().fold(real, |p, c| p.join(c));
+        }
+        match (base.parent(), base.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name);
+                base = parent;
+            }
+            _ => return path.to_path_buf(),
         }
     }
 }

@@ -242,6 +242,10 @@ fn fr06_one_file_system_stops_at_a_mount_point() {
 // FR-07: Odd names
 
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "macOS file systems reject non-UTF-8 names"
+)]
 fn fr07_non_utf8_name_is_escaped() {
     let fx = Fixture::new();
     let name = std::ffi::OsStr::from_bytes(&[0xFF, 0x61]);
@@ -274,7 +278,14 @@ fn fr07_long_name_is_cut_in_the_middle() {
 #[test]
 fn fr07_deep_chain_does_not_crash_and_joins() {
     let fx = Fixture::new();
-    let deep = vec!["d"; 500].join("/");
+    // 500 levels, as in the spec. macOS limits a path to 1024 bytes, so
+    // there the chain is as deep as that limit allows.
+    let levels = if cfg!(target_os = "macos") {
+        (1000 - fx.path().as_os_str().len() - "/leaf.txt".len()) / 2
+    } else {
+        500
+    };
+    let deep = vec!["d"; levels].join("/");
     fx.file(&format!("{deep}/leaf.txt"), "leaf\n");
     let out = run(&fx, &[]);
     assert_eq!(out.code, Some(0), "{out:?}");

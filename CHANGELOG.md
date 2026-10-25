@@ -37,4 +37,4 @@ The first release.
   rules and salience weights (P4).
 - Shell completions (bash, zsh, fish) and a man page (P4).
 - Release archives for Linux x86_64 and aarch64 and macOS x86_64 and arm64,
-  and a Homebrew tap (P4). Intel macOS builds without Magika.
+  and an installer script (P4). Intel macOS builds without Magika.

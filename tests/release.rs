@@ -71,7 +71,18 @@ fn fr69_the_man_page_renders_with_no_error() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "{stderr}");
     assert!(stderr.trim().is_empty(), "{stderr}");
-    let text = String::from_utf8_lossy(&out.stdout);
+    // macOS man prints bold as overstrike (`N\bN`) even into a pipe, and
+    // may print hyphens as U+2010.
+    let mut text = String::new();
+    for c in String::from_utf8_lossy(&out.stdout).chars() {
+        match c {
+            '\u{8}' => {
+                text.pop();
+            }
+            '\u{2010}' | '\u{2212}' => text.push('-'),
+            c => text.push(c),
+        }
+    }
     for want in ["teak", "--format", "--json-full", "config.toml"] {
         assert!(text.contains(want), "{want} in:\n{text}");
     }
@@ -173,8 +184,7 @@ fn fr68_dist_builds_the_four_targets() {
         assert!(targets.contains(&t), "{t} in {targets:?}");
     }
     let installers = strings(&d["installers"]);
-    assert!(installers.contains(&"homebrew"), "{installers:?}");
-    assert!(d.get("tap").is_some(), "a Homebrew tap");
+    assert!(installers.contains(&"shell"), "{installers:?}");
     assert!(
         manifest_dir()
             .join(".github/workflows/release.yml")
