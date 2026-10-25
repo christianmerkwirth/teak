@@ -25,18 +25,116 @@ teak/  61G · 1,298,465 files · rust crate
 
 ## Install
 
+teak runs on Linux (x86_64, aarch64) and macOS (Apple silicon, Intel).
+
+> **Note:** teak has no release yet. Until the first release, build it from
+> source. The prebuilt binaries, Homebrew, and crates.io come with v0.1.0.
+
+### From source (works now)
+
+You need:
+
+- Rust 1.88 or newer. Get it from [rustup.rs](https://rustup.rs), or update
+  with `rustup update`.
+- A C compiler, for the bundled xz and zstd libraries. On Debian or Ubuntu:
+  `sudo apt install build-essential`. On macOS: `xcode-select --install`.
+- Network access during the build. The build downloads a prebuilt ONNX
+  Runtime for Magika. teak itself never uses the network.
+
+Install the latest version from GitHub:
+
 ```sh
-cargo install teak
+cargo install --locked --git https://github.com/christianmerkwirth/teak
+```
+
+Or install from a local checkout:
+
+```sh
+git clone https://github.com/christianmerkwirth/teak
+cd teak
+cargo install --locked --path .
+```
+
+Both commands put the binary into `~/.cargo/bin`. rustup adds that directory
+to your `PATH`. Check the install:
+
+```sh
+teak --version    # teak 0.1.0 (magika: on)
+```
+
+To build with no network access, turn Magika off. teak then types files by
+magic bytes and file names:
+
+```sh
+cargo install --locked --path . --no-default-features
+```
+
+To try teak without an install, run it from the checkout:
+
+```sh
+cargo run --release -- -n 40 ~/some/dir
+```
+
+### Prebuilt binaries (from v0.1.0)
+
+The installer script downloads the right archive for your machine and puts
+`teak` into `~/.cargo/bin`:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/christianmerkwirth/teak/releases/latest/download/teak-installer.sh | sh
+```
+
+With Homebrew:
+
+```sh
 brew install christianmerkwirth/tap/teak
 ```
 
-Release archives for Linux (x86_64, aarch64) and macOS (x86_64, arm64) are on
-the GitHub releases page. Each archive holds the binary, the bash, zsh, and
-fish completions, and the man page `teak.1`.
+With Cargo, from crates.io:
+
+```sh
+cargo install --locked teak
+```
+
+You can also download an archive from the
+[releases page](https://github.com/christianmerkwirth/teak/releases) and
+unpack it yourself:
+
+```sh
+tar -xJf teak-x86_64-unknown-linux-gnu.tar.xz
+install -m 755 teak-x86_64-unknown-linux-gnu/teak ~/.local/bin/
+```
+
+The archive names are `teak-<target>.tar.xz`, with these targets:
+
+| Machine | Target |
+|---|---|
+| Linux x86_64 | `x86_64-unknown-linux-gnu` |
+| Linux ARM 64-bit | `aarch64-unknown-linux-gnu` |
+| macOS, Apple silicon | `aarch64-apple-darwin` |
+| macOS, Intel | `x86_64-apple-darwin` |
+
+Each archive holds the binary, the bash, zsh, and fish completions, and the
+man page `teak.1`. A `.sha256` file is next to each archive.
+
+### Intel macOS
 
 On Intel macOS, teak builds without Magika, because no prebuilt ONNX Runtime
-exists for that target. Detection then uses magic bytes and extensions, and
-`teak --version` prints `magika: off`.
+exists for that target. teak then types files by magic bytes and file names,
+and `teak --version` prints `magika: off`. You do not need a special flag.
+
+### Uninstall
+
+```sh
+cargo uninstall teak        # after cargo install
+brew uninstall teak         # after brew install
+rm ~/.cargo/bin/teak        # after the installer script
+```
+
+Then remove the type cache: `~/.cache/teak/` on Linux,
+`~/Library/Caches/teak/` on macOS. Remove `~/.config/teak/` too if you made a
+config file.
 
 ## Use
 
@@ -109,14 +207,38 @@ key gives one warning.
 
 ## Completions and man page
 
-The release archives hold them. From a source checkout:
+The files are in `assets/` in the repo, and at the top level of each release
+archive. Copy the ones for your shell. These commands run from a checkout; in
+an unpacked archive, leave out `assets/`:
+
+```sh
+# bash (needs the bash-completion package)
+mkdir -p ~/.local/share/bash-completion/completions
+cp assets/teak.bash ~/.local/share/bash-completion/completions/teak
+
+# zsh: put _teak into a directory in $fpath
+mkdir -p ~/.zfunc
+cp assets/_teak ~/.zfunc/
+# then in ~/.zshrc, before compinit: fpath=(~/.zfunc $fpath)
+
+# fish
+mkdir -p ~/.config/fish/completions
+cp assets/teak.fish ~/.config/fish/completions/
+
+# man page
+mkdir -p ~/.local/share/man/man1
+cp assets/teak.1 ~/.local/share/man/man1/
+```
+
+Open a new shell, then try `teak --fo<Tab>` and `man teak`. If `man teak`
+finds nothing, add `export MANPATH="$HOME/.local/share/man:"` to your shell
+profile.
+
+After a change to the CLI, make the files again:
 
 ```sh
 cargo run --example gen_assets -- assets
 ```
-
-This writes `teak.bash`, `_teak` (zsh), `teak.fish`, and `teak.1` into
-`assets/`.
 
 ## License
 
