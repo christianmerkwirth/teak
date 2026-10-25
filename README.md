@@ -27,6 +27,10 @@ teak/  61G · 1,298,465 files · rust crate
 
 teak runs on Linux (x86_64, aarch64) and macOS (Apple silicon, Intel).
 
+The Linux binaries need glibc 2.38 or newer: Ubuntu 24.04, Debian 13,
+Fedora 39, or newer. Check your version with `ldd --version`. On an older
+system, build from source without Magika (see below).
+
 ### Prebuilt binaries
 
 The installer script downloads the right archive for your machine and puts
@@ -80,6 +84,7 @@ You need:
   `sudo apt install build-essential`. On macOS: `xcode-select --install`.
 - Network access during the build. The build downloads a prebuilt ONNX
   Runtime for Magika. teak itself never uses the network.
+- On Linux, glibc 2.38 or newer, for the same prebuilt ONNX Runtime.
 
 Install the latest version from GitHub:
 
@@ -98,8 +103,8 @@ cargo install --locked --path .
 Both commands put the binary into `~/.cargo/bin`. rustup adds that directory
 to your `PATH`.
 
-To build with no network access, turn Magika off. teak then types files by
-magic bytes and file names:
+To build with no network access or on an older Linux, turn Magika off. teak
+then types files by magic bytes and file names:
 
 ```sh
 cargo install --locked --path . --no-default-features

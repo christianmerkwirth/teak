@@ -29,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04, magika: on }
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-24.04, magika: on }
           - { target: aarch64-unknown-linux-gnu, runner: ubuntu-24.04-arm, magika: on }
           - { target: aarch64-apple-darwin, runner: macos-14, magika: on }
           - { target: x86_64-apple-darwin, runner: macos-15-intel, magika: off }
@@ -69,7 +69,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-22.04, ubuntu-24.04-arm, macos-14, macos-15-intel]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-14, macos-15-intel]
     runs-on: ${{ matrix.runner }}
     env:
       GH_TOKEN: ${{ github.token }}
