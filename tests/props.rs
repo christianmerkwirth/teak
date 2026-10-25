@@ -292,10 +292,13 @@ fn same_output_for_any_thread_count() {
         ..gen_tree::Opts::default()
     })
     .unwrap();
-    let one = run_in(fx.path(), &["t", "-j", "1"]);
-    let eight = run_in(fx.path(), &["t", "-j", "8"]);
+    // Fast detection: Magika in a debug build, next to the proptest cases,
+    // can reach the 2 s detection cap (FR-51), and the cap is a wall-clock
+    // limit. This test is about the thread count, not about detection.
+    let one = run_in(fx.path(), &["t", "-j", "1", "--detect", "fast"]);
+    let eight = run_in(fx.path(), &["t", "-j", "8", "--detect", "fast"]);
     assert_eq!(one.code, Some(0));
     assert_eq!(one.stdout, eight.stdout);
-    let again = run_in(fx.path(), &["t", "-j", "8"]);
+    let again = run_in(fx.path(), &["t", "-j", "8", "--detect", "fast"]);
     assert_eq!(eight.stdout, again.stdout);
 }

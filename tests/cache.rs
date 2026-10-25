@@ -140,6 +140,19 @@ fn fr54_the_cache_is_never_written_inside_the_scanned_tree() {
 }
 
 #[test]
+fn fr54_a_symlink_in_the_cache_path_still_counts_as_inside() {
+    // As on macOS, where /var is a symlink to /private/var: the cache path
+    // goes through a symlink, and the root is the real path.
+    let fx = cached_fixture();
+    let links = Fixture::new();
+    let link = links.path().join("link");
+    std::os::unix::fs::symlink(fx.path(), &link).unwrap();
+    let out = run_cached(fx.path(), &link, &["-L", "1"]);
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert!(!fx.abs("teak").exists(), "a cache inside the tree");
+}
+
+#[test]
 fn fr54_detect_off_needs_no_cache() {
     let fx = cached_fixture();
     let cache = Fixture::new();
